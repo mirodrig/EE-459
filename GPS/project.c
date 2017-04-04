@@ -12,6 +12,12 @@
 #include <stdio.h>
 #include "ds1631.h"
 
+// define parameters
+#define FOSC 9830400 // clock frequency
+#define BAUD 9600 // for serial interface
+//#define MYUBRR FOSC/16/BAUD-1
+#define MYUBRR 47
+
 // void ds1631_init ( void );
 // void ds1631_conv ( void );
 // void ds1631_temp ( unsigned char *);
@@ -50,21 +56,18 @@ int main(void) {
   sei();
   
   //Define MYUBRR
-  #define FOSC 16000000 // Clock frequency
-  #define BAUD 9600 // Baud rate used
-  #define MYUBRR FOSC/16/BAUD-1 // Value for UBRR0
-  UBRR0 = MYUBRR; // Set baud rate
+  #define FOSC 9830400 // clock frequency
+  #define BAUD 9600 // for serial interface
+  //#define MYUBRR FOSC/16/BAUD-1
+  #define MYUBRR 47
+  UBRR0 = MYUBRR; // Set baud rate\
   
   UCSR0A |= (1 << TXEN0 | 1 << RXEN0 | 1 << RXCIE0); // Enable RX and TX
   UCSR0C = (3 << UCSZ00); // Async., no parity,
               // 1 stop bit, 8 data bits
   
-  // unsigned char t [2];
-  // ds1631_init (); // Initialize the DS1631
-  // ds1631_conv (); // Set the DS1631 to do conversions
-  
   while (1) {
-    //ds1631_temp(t); // Read the temperature data
+
   }               // Loop forever
     return 0;   /* never reached */
 }
@@ -72,5 +75,4 @@ int main(void) {
 ISR(USART_RX_vect){
   // character has been received
   unsigned char receiver = UDR0;
-  printf("%c", receiver);
 }
