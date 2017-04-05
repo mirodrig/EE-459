@@ -18,41 +18,13 @@
 //#define MYUBRR FOSC/16/BAUD-1
 #define MYUBRR 47
 
-// void ds1631_init ( void );
-// void ds1631_conv ( void );
-// void ds1631_temp ( unsigned char *);
-
-//Global Variables
-// volatile int temp = 0;
-// volatile int tempT = 0;
-// volatile int lastTemp = 0;
-// volatile int low = 70;
-// volatile int lastLow = 70;
-// volatile int high = 100;
-// volatile int lastHigh = 100;
-// volatile int adjHigh = 0;
-// volatile char A;
-// volatile char B;
-// volatile int rTemp = 0;
-// volatile int lastRTemp = 0;
-// volatile char retVal[4];
-// volatile char retVal[4];
-// volatile int count;
-
-//Transmission Function
-// void tx_char(char ch){
-//   // Wait for transmitter data register empty
-//   // while ((UCSR0A & (1<<UDRE0)) == 0) {}
-//   // UDR0 = ch;
-// }
+void serial_init(uint8_t ubrr);
 
 int main(void) {
   DDRD |= (1 << PD1); /* Set PD1 for output */ 
   PORTD |= (1 << PD0); /* Set PD0 for input */
   
   //Set Interrupts
-  PCICR |= (1 << PCIE1);
-  PCMSK1 |= ((1 << PCINT9)|(1 << PCINT10));
   sei();
   
   //Define MYUBRR
@@ -60,19 +32,35 @@ int main(void) {
   #define BAUD 9600 // for serial interface
   //#define MYUBRR FOSC/16/BAUD-1
   #define MYUBRR 47
-  UBRR0 = MYUBRR; // Set baud rate\
-  
-  UCSR0A |= (1 << TXEN0 | 1 << RXEN0 | 1 << RXCIE0); // Enable RX and TX
-  UCSR0C = (3 << UCSZ00); // Async., no parity,
+ 
+  serial_init(MYUBRR);
               // 1 stop bit, 8 data bits
   
   while (1) {
-
   }               // Loop forever
     return 0;   /* never reached */
 }
 
-ISR(USART_RX_vect){
-  // character has been received
-  unsigned char receiver = UDR0;
+// initialize the serial port. Takes in no parameters.
+void serial_init(uint8_t ubrr){
+  UBRR0 = ubrr; // set the BAUD rate
+  UCSR0B |= (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0); // turn on the transmitter
+  //UBRR0H = (MYUBRR >> 8); // load upper 8 bits to high byte
+  //UBRR0L = MYUBRR; // load lower 8 bits of BUAD to low byte
+  UCSR0C = (1 << UCSZ01) | (3 << UCSZ00); // set for async operation 8 data bits, one stop bit
 }
+
+// output a byte to the serial port
+void serial_out(char ch){
+  while((UCSR0A & (1 << UDRE0)) == 0);
+  UDR0 = ch;
+  //while((UCSR0A & (1 << UDRE0)) == 0);
+}
+
+ISR(USART_RX_vect){
+//   // character has been received
+//   unsigned char receiver = UDR0;
+  serial_out(UDR0);
+}
+
+
