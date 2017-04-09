@@ -3,7 +3,6 @@
  * this file specifies the internal registers of
  *	the RFM69HCW
 **************************************/
-// RFM69 Internal registers addresses
 #ifndef RFM69_REG_H_
 #define RFM69_REG_H_
 

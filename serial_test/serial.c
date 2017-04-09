@@ -20,7 +20,7 @@ int main(void){
 
 	serial_init(MYUBRR);
 	
-	char str[] = "hello";
+	char str[] = "\r\nhello\n\r";
 	serial_outs(str);
 
 	while(1){

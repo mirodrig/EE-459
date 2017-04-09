@@ -1,8 +1,6 @@
 /********************************************
 *
 *  Name: Andrew Prajogi
-*  Section: 31395 (Weber)
-*  Assignment: Final Project - Thermostat with Remote Sensor
 *
 ********************************************/
 
