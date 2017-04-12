@@ -1,20 +1,16 @@
-/********************************************
-*
-*  Name: Andrew Prajogi
-*
-********************************************/
-
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
 #include <stdio.h>
-#include "ds1631.h"
 
 // define parameters
 #define FOSC 9830400 // clock frequency
 #define BAUD 9600 // for serial interface
 //#define MYUBRR FOSC/16/BAUD-1
 #define MYUBRR 47
+
+char buffer[100];
+int count = 0;
 
 void serial_init(uint8_t ubrr);
 
@@ -52,13 +48,32 @@ void serial_init(uint8_t ubrr){
 void serial_out(char ch){
   while((UCSR0A & (1 << UDRE0)) == 0);
   UDR0 = ch;
-  //while((UCSR0A & (1 << UDRE0)) == 0);
+}
+
+void serial_outs(char s[]){
+  int i = 0;
+  while(s[i] != '\0'){
+    serial_out(s[i]);
+    i++;
+  }
+}
+
+void storeCh(char ch){
+  if(ch == '$'){
+    buffer[count] = '\r';
+    serial_outs(buffer);
+    int c;
+    for(c = 0; c < 100; c++){
+      buffer[c] = '\0';
+    }
+    count = 0;
+    ch = '$';
+  }
+  buffer[count] = ch;
+  count = count + 1;
 }
 
 ISR(USART_RX_vect){
-//   // character has been received
-//   unsigned char receiver = UDR0;
-  serial_out(UDR0);
+  storeCh(UDR0);
+  //serial_out(UDR0);
 }
-
-
