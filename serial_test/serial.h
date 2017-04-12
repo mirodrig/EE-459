@@ -26,7 +26,6 @@ char serial_in(){
 void serial_out(char ch){
 	while((UCSR0A & (1 << UDRE0)) == 0);
 	UDR0 = ch;
-	while((UCSR0A & (1 << UDRE0)) == 0);
 }
 
 // prints the contents of the character string s out of the serial
