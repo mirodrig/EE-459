@@ -3,6 +3,7 @@
  * this file specifies the internal registers of
  *	the RFM69HCW
 **************************************/
+// RFM69 Internal registers addresses
 #ifndef RFM69_REG_H_
 #define RFM69_REG_H_
 
@@ -893,5 +894,23 @@
 #define OOK_BW_166_7  RF_RXBW_MANT_24 | RF_RXBW_EXP_0
 #define OOK_BW_200_0  RF_RXBW_MANT_20 | RF_RXBW_EXP_0
 #define OOK_BW_250_0  RF_RXBW_MANT_16 | RF_RXBW_EXP_0
+
+#define RH_RF69_TESTPA1_NORMAL  0x55
+#define RH_RF69_TESTPA1_BOOST  0x5d
+
+// RH_RF69_REG_5C_TESTPA2
+#define RH_RF69_TESTPA2_NORMAL 0x70
+#define RH_RF69_TESTPA2_BOOST  0x7c
+
+// RH_RF69_REG_01_OPMODE
+#define RH_RF69_OPMODE_SEQUENCEROFF                         0x80
+#define RH_RF69_OPMODE_LISTENON                             0x40
+#define RH_RF69_OPMODE_LISTENABORT                          0x20
+#define RH_RF69_OPMODE_MODE                                 0x1c
+#define RH_RF69_OPMODE_MODE_SLEEP                           0x00
+#define RH_RF69_OPMODE_MODE_STDBY                           0x04
+#define RH_RF69_OPMODE_MODE_FS                              0x08
+#define RH_RF69_OPMODE_MODE_TX                              0x0c
+#define RH_RF69_OPMODE_MODE_RX                              0x10
 
 #endif

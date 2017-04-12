@@ -1,465 +1,425 @@
-/*********************************
- * rfm69.c
-*********************************/
-#include <avr/io.h>
+// for sending on the transceiver
+
 #include <avr/interrupt.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
+#include <avr/io.h>
+#include <util/delay.h>
 
 #include "rfm69.h"
+#include <stdio.h>
+#include "spi.h"
+// #include "serial.h"
 #include "rfm69_reg.h"
-#include "../SPI/spi.h"
-#include "../serial_test/serial.h"
 
-rfm_status_t rf69_init(void){
-	const uint8_t CONFIG[][2] = {
-   		/* 0x01 */ { REG_OPMODE, RF_OPMODE_SEQUENCER_ON | RF_OPMODE_LISTEN_OFF | RFM69_MODE_RX },
-    	/* 0x02 */ { REG_DATAMODUL, RF_DATAMODUL_DATAMODE_PACKET | RF_DATAMODUL_MODULATIONTYPE_FSK | RF_DATAMODUL_MODULATIONSHAPING_00 },
-    	/* 0x03 */ { REG_BITRATEMSB, 0x3E}, // 2000 bps
-    	/* 0x04 */ { REG_BITRATELSB, 0x80},
-   		/* 0x05 */ { REG_FDEVMSB, 0x00}, // 12000 hz (24000 hz shift)
-   		/* 0x06 */ { REG_FDEVLSB, 0xC5},
-   		/* 0x07 */ { REG_FRFMSB, 0xE4 }, // default value
-   		/* 0x08 */ { REG_FRFMID, 0xC0 }, // default value
-  	 	/* 0x09 */ { REG_FRFLSB, 0x12 },
-   		/* 0x0B */ { REG_AFCCTRL, RF_AFCCTRL_LOWBETA_OFF }, // AFC Offset On
+//radio reset pin
+#define RF_reset_pin 11 
 
- 	  	// PA Settings
-  	 	// +20dBm formula: Pout=-11+OutputPower[dBmW] (with PA1 and PA2)** and high power PA settings (section 3.3.7 in datasheet)
-  	 	// Without extra flags: Pout=-14+OutputPower[dBmW]
-  	 	/* 0x11 */ { REG_PALEVEL, RF_PALEVEL_PA0_ON | RF_PALEVEL_PA1_OFF | RF_PALEVEL_PA2_OFF | 0x1f},  // 10mW
-  	 	//{ RFM69_REG_11_PA_LEVEL, RF_PALEVEL_PA0_OFF | RF_PALEVEL_PA1_ON | RF_PALEVEL_PA2_ON | 0x1f},// 50mW    
-  	 	{ REG_PARAMP, RF_PARAMP_500 }, // 500us PA ramp-up (1 bit)
-  	 	{ REG_OCP, RF_OCP_ON | RF_OCP_TRIM_95 },
-  	 	{ REG_LNA, RF_LNA_ZIN_50 }, // 50 ohm for matched antenna, 200 otherwise
-  	 	{ REG_RXBW, RF_RXBW_DCCFREQ_010 | RF_RXBW_MANT_16 | RF_RXBW_EXP_2}, // Rx Bandwidth: 128KHz
-  	 	{ REG_AFCFEI, RF_AFCFEI_AFCAUTO_ON | RF_AFCFEI_AFCAUTOCLEAR_ON }, // Automatic AFC on, clear after each packet
-  	 	{ REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_01 },
-  	 	{ REG_DIOMAPPING2, RF_DIOMAPPING2_CLKOUT_OFF }, // Switch off Clkout
-  	 	// { RFM69_REG_2D_PREAMBLE_LSB, RF_PREAMBLESIZE_LSB_VALUE } // default 3 preamble bytes 0xAAAAAA
-  	 	//{ RFM69_REG_2E_SYNC_CONFIG, RF_SYNC_OFF | RF_SYNC_FIFOFILL_MANUAL }, // Sync bytes off
-  	 	{ REG_SYNCCONFIG, RF_SYNC_ON | RF_SYNC_FIFOFILL_AUTO | RF_SYNC_SIZE_2 | RF_SYNC_TOL_0 },
-  	 	{ REG_SYNCVALUE1, 0x2D },
- 	  	{ REG_SYNCVALUE2, 0xAA },
-   		{ REG_PACKETCONFIG1, RF_PACKET1_FORMAT_VARIABLE | RF_PACKET1_DCFREE_OFF | RF_PACKET1_CRC_ON | RF_PACKET1_CRCAUTOCLEAR_ON | RF_PACKET1_ADRSFILTERING_OFF },
-	   	{ REG_PAYLOADLENGTH, RFM69_FIFO_SIZE }, // Full FIFO size for rx packet
-  	 	// { RFM69_REG_3B_AUTOMODES, RF_AUTOMODES_ENTER_FIFONOTEMPTY | RF_AUTOMODES_EXIT_PACKETSENT | RF_AUTOMODES_INTERMEDIATE_TRANSMITTER },
-  	 	{ REG_FIFOTHRESH, RF_FIFOTHRESH_TXSTART_FIFONOTEMPTY | 0x05 }, //TX on FIFO not empty
- 	  	//RXRESTARTDELAY must match transmitter PA ramp-down time (bitrate dependent)
- 	   { REG_PACKETCONFIG2, RF_PACKET2_RXRESTARTDELAY_2BITS | RF_PACKET2_AUTORXRESTART_ON | RF_PACKET2_AES_OFF },
- 	    // run DAGC continuously in RX mode, recommended default for AfcLowBetaOn=0
-    	{ REG_TESTDAGC, RF_DAGC_IMPROVED_LOWBETA0 },
-    	// { RFM69_REG_71_TEST_AFC, 0x0E }, //14* 488hz = ~7KHz
-		{255, 0}
-	};
-	uint8_t i; // for looping
+// The crystal oscillator frequency of the RF69 module
+#define RH_RF69_FXOSC 32000000.0
 
-	/* Call the user setup function to configure the SPI peripheral */
-    if(spi_init() != RFM_OK){
-        //serial_outs("\rSPI failed to setup\n\r");
-        return RFM_FAIL;
-    }
-	/* Zero version number, RFM probably not connected/functioning */
-    uint8_t res = _rf69_read(REG_VERSION);
-    if (res != 0x24){
-        return RFM_FAIL;
-    }
-    // serial_outs("\rpassed setup\n\r");
-    /* Set up device */
-    for (i = 0; CONFIG[i][0] != 255; i++){
-    	_rf69_write(CONFIG[i][0], CONFIG[i][1]);
-    }
+// The Frequency Synthesizer step = RH_RF69_FXOSC / 2^^19
+#define RH_RF69_FSTEP  (RH_RF69_FXOSC / 524288)
+
+#define Max_Message_length 60
+
+/* Run to inialize the Radio communication 
+*/ 
+// complete
+void RFM_init(){
+	// manually reset the transceiver
+	DDRC |= DDC1;
+	PORTC |= (1 << PC1); // pull to HIGH
+	_delay_ms(100);
+	PORTC &= ~(1 << PC1); // set to LOW
+	_delay_ms(100);
+
+	// Configure important RH_RF69 registers
+	// defaults to fixed packet format 
+    // Here we set up the standard packet format for use by the RH_RF69 library:
+    // 4 bytes preamble
+    // 2 SYNC words 2d, d4
+    // 2 CRC CCITT octets computed on the header, length and data (this in the modem config data)
+    // 0 to 60 bytes data
+    // RSSI Threshold -114dBm
+    // We dont use the RH_RF69s address filtering: instead we prepend our own headers to the beginning
+    // of the RH_RF69 payload
+
+	// RH_RF69_REG_3C_FIFOTHRESH : 0x3c == Tx start 
+	// RH_RF69_FIFOTHRESH_TXSTARTCONDITION_NOTEMPTY : 0x80  setting threshold for fif0 to 0x8f as recommended 
+
+	rfm_write(REG_FIFOTHRESH, RF_FIFOTHRESH_TXSTART_FIFONOTEMPTY | 0x0F); 
+    //RFM_writeReg(RH_RF69_REG_3C_FIFOTHRESH, RH_RF69_FIFOTHRESH_TXSTARTCONDITION_NOTEMPTY | 0x0f); // thresh 15 is default
+
+    rfm_write(REG_TESTDAGC, RF_DAGC_IMPROVED_LOWBETA0);
+    //RFM_writeReg(RH_RF69_REG_6F_TESTDAGC, RH_RF69_TESTDAGC_CONTINUOUSDAGC_IMPROVED_LOWBETAOFF);
+
+    rfm_write(REG_TESTPA1, RH_RF69_TESTPA1_NORMAL);
+    rfm_write(REG_TESTPA2, RH_RF69_TESTPA2_NORMAL);
+    //RFM_writeReg(RH_RF69_REG_5A_TESTPA1, RH_RF69_TESTPA1_NORMAL);
+    //RFM_writeReg(RH_RF69_REG_5C_TESTPA2, RH_RF69_TESTPA2_NORMAL);
+
+    char syncwords[] = {0x2d, 0x4d};
     
-    rf69_set_mode(RFM69_MODE_STDBY); // TODO: determine if this should be SLEEP or STDBY
+    RFM_setSyncWords(syncwords);
 
-    //char buf[30];
-    //snprintf(buf, 30, "\r0x%02X mode\n\r", radio._mode); // supposed to be 0x04
-    //serial_outs(buf);
+    RHFM_setPreambleLength(4); 
 
-    return RFM_OK;
+    RFM_setFrequency(434.0);
 }
 
-uint8_t _rf69_read(uint8_t addr){
+// complete
+char RFM_Read_FIFO(char* buffer, char* currentMode){
+	cli(); // turn off interrupts
+	RFM_setMode(currentMode,0); // set to idle
+	
+	// set the chip select pin to LOW
+	DDRB |= 1 << DDB2;
+	PORTB |= (1 << PB2);
+	// digitalWrite(cs, 0); 
+	
+	spi_transfer(REG_FIFO);
+	// SPI_transfer(RH_RF69_REG_00_FIFO);
+
+	char payload = spi_transfer(0); //get length of bytes 
+	int length = 0 ; 
+
+	if (payload != 0){
+		for (length = 0 ; length <payload ; length++){
+			buffer[length] = spi_transfer(0); 
+		}
+	}
+	PORTB &= ~(1 << PB2);
+	//digitalWrite(cs, 1); 
+	sei(); 
+	return payload; // the length of the message 
+}
+
+// complete
+char RFM_recieve(struct RFM69* radio){
+	if (radio->receiveDataFlag){
+		// serial_outputString("got");
+		radio->receiveDataFlag = 0;
+		// char buf[60];
+		radio->buffer_length = RFM_Read_FIFO(radio->buffer, &(radio->currentMode)); //getting the length of the message 
+		RFM_setMode(&(radio->currentMode),1); // set mode to RX 
+		// serial_outputString(buf);
+		return 1; // Note that the mode will be in idle at the end 
+	}
+	else {
+		return 0; 
+	}
+}
+
+/* Call this function to send data via the radio communication 
+	- the mode will change:: ->idle -> TX 
+	- When the package is sent, an interrupt will happen on pin D0 (G0)
+	- Parameters : 	
+		- data :: pointer to the data that is going to be sent 
+		- currentMode :: currentMode of the radio, is in radio struct 
+*/
+// complete
+void RFM_send(char* data, char* currentMode){
+	char length = sizeof(data); 
+	if ( length > Max_Message_length){
+		return ; 
+	}
+	cli(); 
+	RFM_setMode(currentMode,0); // set mode to idle 
+	// wait for MODEREADY interrupt
+	while ( (rfm_read(REG_IRQFLAGS1) & 0x80) == 0x00){
+		// serial_outs("\rstuck loop 1\n\r");
+	} // wait for ModeReady in idle 
+	//char buf[50];
+	//snprintf(buf, 50, "\r0x%02X, 0x%02X\n\r", REG_IRQFLAGS1, rfm_read(REG_IRQFLAGS1));
+	//serial_outs(buf);
+
+	DDRB |= 1 << DDB2;
+	//PORTB |= (1 << PB2);
+	PORTB &= ~(1 << PB2);
+	// digitalWrite(cs, 0);
+
+	char message[2] = {REG_FIFO | 0x80, length};
+	
+	spi_multiWrite(message, 2);
+	serial_outs("\rwrote to SPI\n\r");
+	while(length--){
+		//serial_out(*data++);
+		serial_outs(data);
+		spi_transfer(*data++); 
+	}
+	//serial_outs("\rstep1\n\r");
+	PORTB |= (1 << PB2);
+	//PORTB &= ~(1 << PB2);
+	// digitalWrite(cs, 1); 
+	sei();
+	//serial_outs("\rstep2\n\r");
+	RFM_setMode(currentMode,2); //TX 
+	//serial_outs("\rstep3\n\r");
+	// waits until the transceiver is in standby mode
+	// so far REG_OPMODE reads 0x0C
+
+	// wait until the PACKETSENT interrupt is set. If so, set the operating
+	// mode to STDBY mode.
+	while((rfm_read(REG_IRQFLAGS2) & RF_IRQFLAGS2_PACKETSENT) != RF_IRQFLAGS2_PACKETSENT);
+	RFM_setMode(currentMode, 0);
+
+	//while ((rfm_read(REG_OPMODE) & 0x1C) != 0x04){ // try REG_IRQFLAGS2 -> PACKETSENT
+	//} // we're now stuck here
+	serial_outs("\rpackets sent\n\r");
+}
+
+// complete
+char RFM_interruptHandler(struct RFM69 radio, char* currentMode) {
+	// serial_outputString("interrupt handeler");
+	char buf[50];
+	snprintf(buf, 50, "\rflag1: 0x%02X, flag2: 0x%02X\n\r", rfm_read(REG_IRQFLAGS1), rfm_read(REG_IRQFLAGS2));
+	serial_outs(buf);
+
+	// if we are in RXMODE and PAYLOAD is ready
+	if (*currentMode == 1 && (rfm_read(REG_IRQFLAGS2) & 0x04)){
+		serial_outs("\rnew data\n\r");
+		// serial_outputString("new data ");
+		return 1;
+	}
+	// transmit
+	else if (*currentMode == 1){
+		serial_outs("\rset to idle\n\r");
+		RFM_setMode(&radio.currentMode,0);
+		return 1;
+	}
+	else{
+		serial_outs("\rreturn zero\n\r");
+		return 0;
+	}
+}
+
+// complete
+void RFM_spiConfig(){
+	spi_init();
 	cli();
-	//char buffer[50];
+	SPCR = (SPCR & ~0x0C) | 0x00;
+	SPCR &= ~(1 << DORD); // transmit MSB first
+	SPCR = (SPCR & ~0x03) | (0x00 & 0x03); // this is just changing the first two bits of SPCR 
+    SPSR = (SPSR & ~0x01) | ((0x00 >> 2) & 0x01); // this is just chaning the 2X bit 
+    sei();
+}
+
+/* This function configures the SPI communication for the radio 
+*/ 
+/*void RFM_spiConfig() {
+	pinMode(cs, OUTPUT); 
+	cli(); // stopping interrupts 
+	// spi values corresponding to datasheet 
+	SPI_setDataMode(SPI_MODE0); // setting the polarity of SPI 
+	SPI_setBitOrder(1); //want MSB first 
+	SPI_setClockDivider(SPI_CLOCK_DIV4);
+	sei(); // starting interrupts 
+}*/
+
+
+
+/* This function will write to a given register on the radio 
+	- address :: of the register to write to 
+	- data :: what you want to write to the register 
+	
+*/ 
+
+// complete
+void rfm_write(char addr, char value){
+	cli();
 	spi_ss_assert(); // set SS pin to LOW
-	spi_transfer(addr & 0x7F);
-	uint8_t regVal = spi_transfer(0);
+	char message[2] = {addr | 0x80, value};
+	addr |= 0x80; // put a 1 in MSB
+	spi_multiWrite(message, 2);
 	spi_ss_deassert(); // set SS pin to HIGH
-	//snprintf(buffer, 50, "\rRead 0x%02X and recv 0x%02X\n\r", addr, regVal);
-	//serial_outs(buffer);
+	sei(); // enable interrupts
+}
+
+// write a single byte to a given register 
+/*void RFM_writeReg(char address, char data){
+	cli(); // disable global 
+	//MSB == 1 for write it is 0 for read 
+	// next 7 bits are address to write to 
+	digitalWrite(cs, 0); // select 
+	char message[2] = {address | RH_SPI_WRITE_MASK, data };
+	address |= RH_SPI_WRITE_MASK; // putting 1 in MSB 
+	SPI_multiWrite(message,2);
+	digitalWrite(cs, 1); 
+	sei(); 
+}*/
+
+// complete
+char rfm_read(char addr){
+	cli();
+	DDRB |= DDB2;
+	PORTB &= ~(1 << PB2); // set SS pin to LOW
+	//spi_ss_assert(); // set SS pin to LOW
+	addr &= ~(0x80); // set 0 as MSB
+	spi_transfer(addr);
+
+	char regVal = spi_transfer(0x00);
+	PORTB |= (1 << PB2); // set SS pin to HIGH
+	//spi_ss_deassert(); // set SS pin to HIGH
+	
+	// char buf[50];
+	// snprintf(buf, 50, "\rsrc: 0x%02X, val: 0x%02X\n\r", addr, regVal);
+	// serial_outs(buf);
+
 	sei();
 	return regVal;
 }
 
-void _rf69_write(uint8_t addr, uint8_t value){
-	cli();
-	//char buffer[50];
-	spi_ss_assert();
-	spi_transfer(addr | 0x80);
-	spi_transfer(value);
-	spi_ss_deassert();
-	//snprintf(buffer, 50, "\rWrite 0x%02X with 0x%02X\n\r", addr, value);
-	//serial_outs(buffer);
-	sei();
+/*char RFM_readReg(char address){
+	cli(); 
+	digitalWrite(cs, 0);
+	address &= ~RH_SPI_WRITE_MASK; // putting 0 in MSB
+// 	char message[] = {address, 0x00};
+	SPI_transfer(address); 
+	char new = SPI_transfer(0x00); 
+// 	SPI_multiTransfer(message,2); 
+	digitalWrite(cs, 1);
+	sei(); 
+	return new ; 
+}*/
+
+// complete
+void RFM_setSyncWords(char* syncwords){
+	// restricting number of sync words to 2 for now 
+	// getting the current syncConfig
+	// default number of sync words is 2 
+	// syncwords is on by default  
+
+	// currently not changing any of the default values 
+	// char synConfig = RFM_read(RH_RF69_REG_2E_SYNCCONFIG,cs) ; 
+
+	// setting the sync words 
+	rfm_write(0x2F, syncwords[0]);
+	rfm_write(0x30, syncwords[1]);
+	//RFM_writeReg(0x2f,syncwords[0]);
+	//RFM_writeReg(0x30,syncwords[1]);
 }
 
-void rf69_set_mode(uint8_t newMode){
-    switch(newMode){
-	  case RFM69_MODE_TX:
-	   _rf69_write(REG_OPMODE, (_rf69_read(REG_OPMODE) & 0xE3) | RF_OPMODE_TRANSMITTER);
-	   break;
-	  case RFM69_MODE_RX:
-	   _rf69_write(REG_OPMODE, (_rf69_read(REG_OPMODE) & 0xE3) | RF_OPMODE_RECEIVER);
-	   break;
-	  case RFM69_MODE_STDBY:
-	   _rf69_write(REG_OPMODE, (_rf69_read(REG_OPMODE) & 0xE3) | RF_OPMODE_STANDBY);
-	   break;
-	  case RFM69_MODE_SLEEP:
-	   _rf69_write(REG_OPMODE, (_rf69_read(REG_OPMODE) & 0xE3) | RF_OPMODE_SLEEP);
-	   break;
-	  default:
-	   return;
+// complete
+void RHFM_setPreambleLength(uint16_t bytes){
+    rfm_write(REG_PREAMBLEMSB, bytes >> 8);
+    rfm_write(REG_PREAMBLELSB, bytes & 0xFF);
+
+    // RFM_writeReg(RH_RF69_REG_2C_PREAMBLEMSB, bytes >> 8);
+    // RFM_writeReg(RH_RF69_REG_2D_PREAMBLELSB, bytes & 0xff);
+}
+
+// complete
+void RFM_setFrequency(float freq){
+	uint32_t frf = (uint32_t)((freq * 1000000.0) / RH_RF69_FSTEP);
+	rfm_write(REG_FRFMSB, (frf >> 16) & 0xFF);
+	rfm_write(REG_FRFMID, (frf >> 8) & 0xFF);
+	rfm_write(REG_FRFLSB, frf & 0xFF);
+
+	// RFM_writeReg(RH_RF69_REG_07_FRFMSB, (frf >> 16) & 0xff);
+    // RFM_writeReg(RH_RF69_REG_08_FRFMID, (frf >> 8) & 0xff);
+    // RFM_writeReg(RH_RF69_REG_09_FRFLSB, frf & 0xff);
+}
+
+/*	Modes of operation 
+000 → Sleep mode (SLEEP) 			   :: RH_RF69_OPMODE_MODE_SLEEP  
+001 → Standby mode (STDBY) 			   :: RH_RF69_OPMODE_MODE_STDBY  
+010 → Frequency Synthesizer mode (FS)  :: RH_RF69_OPMODE_MODE_FS 
+011 → Transmitter mode (TX) 		   :: RH_RF69_OPMODE_MODE_TX   
+100 → Receiver mode (RX) 			   :: RH_RF69_OPMODE_MODE_RX   
+*/ 
+// complete
+void RFM_modeSetter(char mode){
+	char opmode = rfm_read(REG_OPMODE); // access 0x01 register which holds operation mode 
+    //char opmode = RFM_readReg(RH_RF69_REG_01_OPMODE);
+    opmode &= ~(RH_RF69_OPMODE_MODE); // set bits 4-2 to zero
+    //opmode &= ~RH_RF69_OPMODE_MODE; // setting bits 4-2 to zero 
+    opmode |= (mode & RH_RF69_OPMODE_MODE); // setting bits 4-2 to the mode we want 
+    rfm_write(REG_OPMODE, opmode);
+    //RFM_writeReg(RH_RF69_REG_01_OPMODE, opmode);
+    // Wait for mode to change. this could cause problems 
+    // while (!(RFM_readReg(RH_RF69_REG_27_IRQFLAGS1,cs) & RH_RF69_IRQFLAGS1_MODEREADY));
+}
+
+// complete
+void RFM_setMode(char* currentMode, char mode){
+	// already in RX mode ?
+	if (*currentMode == mode){
+		return ; 
+	}
+	// STDBYMODE
+	if (mode == 0){
+		*currentMode = 0; 
+		rfm_write(REG_TESTPA1, 0x55); // boosts power to transmitter
+		//RFM_writeReg(RH_RF69_REG_5A_TESTPA1, 0x55); // used to boost power to transmitter / reciever 
+		rfm_write(REG_TESTPA2, 0x70);
+		// RFM_writeReg(RH_RF69_REG_5C_TESTPA2, 0x70); 
+		RFM_modeSetter(RH_RF69_OPMODE_MODE_STDBY);
+	}
+	// RXMODE
+	else if (mode == 1) {
+		rfm_write(REG_TESTPA1, 0x55); // used to boost power to transmitter / reciever 
+		//RFM_writeReg(RH_RF69_REG_5A_TESTPA1, 0x55);
+		rfm_write(REG_TESTPA2, 0x70);
+		//RFM_writeReg(RH_RF69_REG_5C_TESTPA2, 0x70); 
+		RFM_modeSetter(RH_RF69_OPMODE_MODE_RX); 
+		rfm_write(REG_DIOMAPPING1, 0x40); // set DIO0 to "PAYLOADREADY" in receive mode
+		//RFM_writeReg(RH_RF69_REG_25_DIOMAPPING1, 0x40);
+		RFM_setHighPower(0);
+		*currentMode = 1 ; 
+	}
+	// TXMODE
+	else if (mode == 2){
+		rfm_write(REG_TESTPA1, 0x5D); // used to boost power to transmitter / reciever 
+		//RFM_writeReg(RH_RF69_REG_5A_TESTPA1, 0x5d);
+		rfm_write(REG_TESTPA2, 0x7C);
+		//RFM_writeReg(RH_RF69_REG_5C_TESTPA2, 0x7c); 
+		RFM_modeSetter(RH_RF69_OPMODE_MODE_TX); 
+		rfm_write(REG_DIOMAPPING1, 0x00); // setting DIO0 to packetsent for TX 
+		//RFM_writeReg(RH_RF69_REG_25_DIOMAPPING1, 0x00);
+		RFM_setHighPower(1);
+		*currentMode = 2; 
 	}
 }
 
-/*rfm_status_t rf69_set_mode(const uint8_t newMode){
-    uint8_t res;
-    _rf69_read(REG_OPMODE, &res);
-    _rf69_write(REG_OPMODE, (res & 0xE3) | newMode);
-    _mode = newMode;
-    return RFM_OK;
-}*/
-
-/*void receiveBegin(struct rfm69 *radio){
-	radio->DATALEN = 0; // DATALEN
-	radio->senderID = 0; // SENDERID
-	radio->targetID = 0; // TARGETID
-	radio->PAYLOADLEN = 0; // PAYLOADLENGTH
-	radio->ACK_REQ = 0; // ACK_REQUESTED
-	radio->ACK_RECV = 0; // ACK_RECEIVED
-	radio->RSSI = 0; // RSSI
-	// determine if registers are ready
-	if(_rf69_read(REG_IRQFLAGS2) & RF_IRQFLAGS2_PAYLOADREADY){ // 0x04
-		// avoid RX deadlocks
-		_rf69_write(REG_PACKETCONFIG2, (_rf69_read(REG_PACKETCONFIG2) & 0xFB) | RF_PACKET2_RXRESTART);
-	}
-	_rf69_write(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_01); // set DIO0 to PAYLOADREADY in recv mode
-	rf69_set_mode(radio, RFM69_MODE_RX);
-}*/
-
-/*bool receiveDone(struct rfm69 *radio){
-	cli(); // no interrupts
-	if(radio->_mode == RFM69_MODE_STDBY){
-		return true;
-	}
-	else if(radio->_mode == RFM69_MODE_RX){
-		sei();
-		return false;
-	}
-	receiveBegin(radio);
-	return false;
-}*/
-
-/*rfm_status_t rf69_receive(uint8_t* buf, uint8_t* len, int16_t* lastrssi, bool* rfm_packet_wait){
-    uint8_t res;
-    // set the mode of the transceiver to RX
-    if(_mode != RFM69_MODE_RX){
-        rf69_set_mode(RFM69_MODE_RX);
-    }
-    // Check IRQ register for payloadready flag
-    // (indicates RXed packet waiting in FIFO)
-    _rf69_read(REG_IRQFLAGS2, &res);
-
-    if (res & RF_IRQFLAGS2_PAYLOADREADY){
-        // Get packet length from first byte of FIFO
-        _rf69_read(REG_FIFO, len);
-        *len += 1;
-        // Read FIFO into our Buffer
-        _rf69_burst_read(REG_FIFO, buf, RFM69_FIFO_SIZE);
-        // Read RSSI register (should be of the packet? - TEST THIS)
-        _rf69_read(REG_RSSIVALUE, &res);
-        *lastrssi = -(res/2);
-        // Clear the radio FIFO (found in HopeRF demo code)
-        _rf69_clear_fifo();
-        *rfm_packet_wait = true;
-        return RFM_OK;
-    }
-    *rfm_packet_wait = false;
-    return RFM_OK;
-}*/
-
-/*bool canSend(struct rfm69 *radio){
-	// if payload is ready and signal strength is enough
-	if(radio->_mode == RFM69_MODE_TX && PAYLOADLENGTH == 0 && readRSSI() < CSMA_LIMIT){
-		rf69_set_mode(radio, RFM69_MODE_STDBY);
-		return true;
-	}
-	return false;
-}*/
-
-/*void rf69_sendFrame(uint8_t addr, const void* buffer, uint8_t bufferSize, bool requestACK, bool sendACK){
-//void rf69_sendFrame(struct rfm69* radio, uint8_t addr, const void* buffer, uint8_t bufferSize){
-	uint8_t i;
-
-	rf69_set_mode(RFM69_MODE_STDBY); // turn off the receiver
-	while((_rf69_read(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for MODEREADY
-	_rf69_write(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_00); // DIO0 is "packet sent"
-	if(bufferSize > RFM69_MAX_MESSAGE_LEN){
-		bufferSize = RFM69_MAX_MESSAGE_LEN;
-	}
-	// control byte
-	//uint8_t CTLbyte = 0x00;
-	//if(sendACK){
-		//CTLbyte = RFM69_CTL_SENDACK;
-	//}
-	spi_ss_assert();
-	spi_transfer(REG_FIFO | 0x80);
-	spi_transfer(bufferSize + 3);
-	spi_transfer(addr);
-
-	for(i=0; i<bufferSize; i++){
-		spi_transfer(((uint8_t*)buffer)[i]);
-	}
-	spi_ss_deassert();
-
-	// set to transmit mode
-	rf69_set_mode(RFM69_MODE_TX);
-	// wait for MODEREADY
-	while((_rf69_read(REG_IRQFLAGS2) & RF_IRQFLAGS2_PACKETSENT) == 0x00);
-	rf69_set_mode(RFM69_MODE_STDBY);
-}*/
-
-//void rf69_send(uint8_t addr, const void* buffer, uint8_t bufferSize, bool requestACK){
-/*void rf69_send(char *data, struct rfm69 *radio){
-	uint8_t dataLength = sizeof(data)/sizeof(uint8_t);
-    if(dataLength > RFM69_MAX_MESSAGE_LEN){
-        return;
-    }
-    cli();
-    rf69_set_mode(RFM69_MODE_STDBY);
-    
-
-    // avoid RX deadlock
-	_rf69_write(REG_PACKETCONFIG2, (_rf69_read(REG_PACKETCONFIG2) & 0xFB) | RF_PACKET2_RXRESTART);
-	while(!canSend()){
-		//receiveDone();
-	}
-	rf69_sendFrame(addr, buffer, bufferSize, requestACK, false);
-}*/
-
-/*void rf69_send(char *data){
-    char length = sizeof(data);
-    
-    // if length exceeds maximum data length
-    if(length > RFM69_MAX_MESSAGE_LEN){
-        return;
-    }
-    cli(); // turn off interrupts
-
-    // rf69_set_mode(RFM69_MODE_TX); // set transmitter
-    rf69_set_mode(RFM69_MODE_STDBY); // set the standby mode
-    // wait for MODEREADY
-    while((_rf69_read(REG_IRQFLAGS1) & 0x80) == 0x00){} // stuck here
-
-    spi_ss_assert(); // set SS pin to LOW
-    //char message[2] = {REG_FIFO | 0x80}; // 0x80 being the write mask
-    spi_transfer(REG_FIFO | 0x80);
-
-    while(length--){
-        spi_transfer(*data++);
-    }
-    char buf[25];
-    snprintf(buf, 25, "\rsent %s\n\r", data);
-    serial_outs(buf);
-
-    spi_ss_deassert();
-    sei();
-    rf69_set_mode(RFM69_MODE_TX); // set to Tx mode
-    // wait until the mode of operation is set to idle
-    while((_rf69_read(REG_OPMODE) & 0x1C) != 0x04);
-}*/
-
-/*rfm_status_t rf69_send(const uint8_t* data, uint8_t len, const uint8_t power){
-    uint8_t oldMode, res;
-    uint8_t paLevel;
-    // power is TX Power in dBmW (valid values are 2dBmW-20dBmW)
-    if (power < 2 || power > 20){
-        // Could be dangerous, so let's check this
-        serial_outs("\rERROR: power failure\n\r");
-        return RFM_FAIL;
-    }
-    oldMode = _mode;
-    // Start transmitter
-    rf69_set_mode(RFM69_MODE_TX); // 0x01 written with 0x0C
-    serial_outs("\rRFM69 in Tx mode\n\r");
-    // Set up PA
-    if (power <= 17) {
-        // Set PA Level
-        paLevel = power + 28;
-        // enables PA0, disables PA1 and PA2. The PA0 output is on pin RFIO.
-        // This provides power to the LNA of the transmitter.
-        _rf69_write(REG_PALEVEL, RF_PALEVEL_PA0_ON | RF_PALEVEL_PA1_OFF |
-            RF_PALEVEL_PA2_OFF | paLevel);        
-    }
-    else {
-        // Disable Over Current Protection
-        _rf69_write(REG_OCP, RF_OCP_OFF);
-        // Enable High Power Registers
-        _rf69_write(REG_TESTPA1, 0x5D); // set to 20 dBm mode
-        _rf69_write(REG_TESTPA2, 0x7C); // set to 20 dBm mode
-        // Set PA Level
-        paLevel = power + 11;
-        // enables both PA1 and PA2 while disabling PA0. This delivers
-        // 20 dBm to the antenna.
-        _rf69_write(REG_PALEVEL, RF_PALEVEL_PA0_OFF |
-            RF_PALEVEL_PA1_ON | RF_PALEVEL_PA2_ON | paLevel);
-    }
-    // Wait for PA ramp-up
-    res = 0;
-    // wait until the TXREADY interrupt is sent
-    while (!(res & RF_IRQFLAGS1_TXREADY)){
-        //serial_outs("\r\nTransmitter is ready to transmit\n\r");
-        _rf69_read(REG_IRQFLAGS1, &res);
-    }
-    // Throw Buffer into FIFO, packet transmission will start 
-    //  automatically
-    _rf69_fifo_write(data, len);
-
-    res = 0;
-    // wait until the complete packet has been sent. Set to HIGH
-    // when the last bit of the shift register has been sent
-    while (!(res & RF_IRQFLAGS2_PACKETSENT))
-        _rf69_read(REG_IRQFLAGS2, &res);
-
-    // Return Transceiver to original mode
-    rf69_set_mode(oldMode);
-
-    // If we were in high power, switch off High Power Registers 
-    if (power > 17) {
-        // Disable High Power Registers. Set to normal setting and
-        // for Rx mode.
-        _rf69_write(REG_TESTPA1, 0x55);
-        _rf69_write(REG_TESTPA2, 0x70);
-        // Enable Over Current Protection
-        _rf69_write(REG_OCP, RF_OCP_ON | RF_OCP_TRIM_95);
-    }
-    return RFM_OK;
-}*/
-
-/*int16_t readRSSI(){
-	uint16_t rssi = 0;
-	//if(forceTrigger){
-		// RSSI trigger not needed if in continuous mode
-		//_rf69_write(REG_RSSICONFIG, RF_RSSI_START);
-		// wait for RSSI ready
-		//while((_rf69_read(REG_RSSICONFIG) & RF_RSSI_DONE) == 0x00);
-	//}
-	rssi = -_rf69_read(REG_RSSIVALUE);
-	rssi >>= 1; // perform bit shifting
-	return rssi;
-}*/
-
-/*void setNodeAddress(uint8_t addr){
-    radio._addr = addr;
-    _rf69_write(REG_NODEADRS, radio._addr);
+// set *transmit/TX* output power: 0=min, 31=max
+// this results in a "weaker" transmitted signal, and directly results in a lower RSSI at the receiver
+// the power configurations are explained in the SX1231H datasheet (Table 10 on p21; RegPaLevel p66): http://www.semtech.com/images/datasheet/sx1231h.pdf
+// valid powerLevel parameter values are 0-31 and result in a directly proportional effect on the output/transmission power
+// this function implements 2 modes as follows:
+//       - for RFM69W the range is from 0-31 [-18dBm to 13dBm] (PA0 only on RFIO pin)
+//       - for RFM69HW the range is from 0-31 [5dBm to 20dBm]  (PA1 & PA2 on PA_BOOST pin & high Power PA settings - see section 3.3.7 in datasheet, p22)
+// complete
+void RFM_setPowerLevel(char powerLevel){
+  powerLevel = (powerLevel > 31 ? 31 : powerLevel);
+  powerLevel /= 2;
+  rfm_write(REG_PALEVEL, (rfm_read(REG_PALEVEL) & 0xE0) | powerLevel);
+  //RFM_writeReg(RH_RF69_REG_11_PALEVEL, (RFM_readReg(RH_RF69_REG_11_PALEVEL) & 0xE0) | powerLevel);
 }
 
-void setNetwork(uint8_t networkID){
-    _rf69_write(REG_SYNCVALUE2, networkID);
-}*/
-
-/*uint8_t rf69_fifo_read()
-static rfm_status_t _rf69_fifo_write(const uint8_t* src, uint8_t len){
-    uint8_t dummy;
-    spi_ss_assert();
-    // Send the start address with the write mask on
-    spi_exchange_single(REG_FIFO | RFM69_SPI_WRITE_MASK, &dummy);
-    // First byte is packet length
-    spi_exchange_single(len, &dummy);
-    // Then write the packet
-    while (len--)
-        spi_exchange_single(*src++, &dummy);
-    spi_ss_deassert();
-    return RFM_OK;
-}*/
-
-/*void rf69_interruptHandler(){
-	if(_mode == RFM69_MODE_TX && (_rf69_read(REG_IRQFLAGS2) & RF_IRQFLAGS2_PAYLOADREADY)){
-		rf69_set_mode(RFM69_MODE_STDBY);
-		spi_ss_assert();
-		spi_transfer(REG_FIFO & 0x7F);
-		PAYLOADLENGTH = spi_transfer(0);
-		PAYLOADLENGTH = PAYLOADLENGTH > 66 ? 66 : PAYLOADLENGTH; // precaution (from library)
-		TARGETID = spi_transfer(0);
-
-		DATALEN - PAYLOADLENGTH - 3;
-		SENDERID = spi_transfer(0);
-		uint8_t CTLbyte = spi_transfer(0);
-
-		ACK_RECEIVED = CTLbyte & RFM69_CTL_SENDACK;
-		ACK_REQUESTED = CTLbyte & RFM69_CTL_REQACK;
-
-		uint8_t i;
-		for(i=0; i<DATALEN; i++){
-			DATA[i] = spi_transfer(0);
-		}
-		if(DATALEN < RFM69_MAX_MESSAGE_LEN){
-			DATA[DATALEN] = 0;
-		}
-		spi_ss_deassert();
-		rf69_set_mode(RFM69_MODE_RX);
+// for RFM69HW only: you must call setHighPower(true) after initialize() or else transmission won't work
+// complete
+void RFM_setHighPower(char onOff){
+	rfm_write(REG_OCP, onOff ? 0x0F : 0x1A); // turning off the overload current protection for PA 
+	//RFM_writeReg(RH_RF69_REG_13_OCP,onOff ? 0x0F : 0x1A);
+	if (onOff){
+		rfm_write(REG_PALEVEL, (rfm_read(REG_PALEVEL) & 0x1F) | 0x40 | 0x20);
+		//RFM_writeReg(RH_RF69_REG_11_PALEVEL, (RFM_readReg(RH_RF69_REG_11_PALEVEL) & 0x1F) | 0x40 | 0x20);
 	}
-	RSSI = readRSSI();
-}*/
-
-//rfm_status_t rf69_interruptHandler(uint8_t currentMode){
-/*uint8_t rf69_interruptHandler(uint8_t* mode){
-    uint8_t res;
-    res = _rf69_read(REG_IRQFLAGS2);
-    // serial_outs("\rinterrupt handler\n\r");
-    if(*mode == RFM69_MODE_TX && (res & 0x04)){
-        serial_outs("\rpackets are sent\r\n");
-        return RFM_OK;
-    }
-    //else if(currentMode == RFM69_MODE_TX){
-    else if(*mode == RFM69_MODE_TX){
-        rf69_set_mode(RFM69_MODE_STDBY);
-        return RFM_OK;
-    }
-    return RFM_FAIL;
-}*/
-
-rfm_status_t spi_init(void){
-   /* Set up the SPI IO as appropriate */
-	SPI_DDR |= SPI_SS | SPI_MOSI | SPI_SCK;
-	SPI_DDR &= ~(SPI_MISO);
-	SPI_PORT |= SPI_SS; // set SS HIGH
-    /* SPI should be mode (0,0), MSB first, double clock rate. Change the
-    values of the SPI registers */
-	SPCR &= ~(_BV(CPOL) | _BV(CPHA) | _BV(DORD));
-	SPSR |= _BV(SPI2X);
-	SPCR |= _BV(MSTR); // become master
-	SPCR |= _BV(SPE); // enable the SPI peripheral
-	return RFM_OK;
+	else {
+		rfm_write(REG_PALEVEL, (rfm_read(REG_PALEVEL) & 0x1F & ~0x40 & ~0x20));
+		//RFM_writeReg(RH_RF69_REG_11_PALEVEL,(RFM_readReg(RH_RF69_REG_11_PALEVEL) & 0x1F & ~0x40 & ~0x20 ));
+	}
 }
 
-rfm_status_t spi_exchange_single(const uint8_t out, uint8_t* in){
-    SPDR = out; // load SPI data register with first parameter
-    /* SPIF - interrupt indicating that serial transfer is complete. The SPIF
-    will be loaded onto the SPSR register. */
-    while(!(SPSR & (1 << SPIF)));
-    *in = SPDR; // SPI data register is now filled with second parameter
-    return RFM_OK;
-}
-
-rfm_status_t spi_ss_assert(void){
-    SPI_PORT &= ~(SPI_SS);
-    return RFM_OK;
-}
-
-rfm_status_t spi_ss_deassert(void){
-    SPI_PORT |= (SPI_SS);
-    return RFM_OK;
+// get the received signal strength indicator (RSSI)
+// complete
+int RFM_readRSSI(){
+  int rssi = 0;
+  rfm_write(REG_RSSICONFIG, 0x01); // start the measurements
+  // RFM_writeReg(RH_RF69_REG_23_RSSICONFIG, 0x01);
+  while((rfm_read(REG_RSSICONFIG) & 0x02) == 0x00); // wait for RSSI_READY
+  //while ((RFM_readReg(RH_RF69_REG_23_RSSICONFIG) & 0x02) == 0x00);
+  rssi = -rfm_read(REG_RSSIVALUE);
+  //rssi = -RFM_readReg(RH_RF69_REG_24_RSSIVALUE);
+  rssi >>= 1;
+  return rssi;
 }
