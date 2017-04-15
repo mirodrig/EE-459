@@ -18,10 +18,6 @@ void interruptInit(){
 	PCMSK0 |= 0x80;
 }
 
-void blink(){
-
-}
-
 struct RFM69 radio; 
 
 int main(void){
@@ -48,17 +44,19 @@ int main(void){
 
 	sei();
 	char message[] = "What's up";
+	char size = sizeof(message);
+
 	while (1){
 		// serial_outputString(radio.buffer);
-		RFM_send(message, &radio.currentMode);
-		_delay_ms(1);
+		RFM_send(message, &radio.currentMode, size);
+		_delay_ms(10);
 	}
     return 0;
 }
 
 //Hardware interrupt
 ISR(INT0_vect){
-	serial_outs("\rInterrupt\n\r");
+	//serial_outs("\rInterrupt\n\r");
 	// set to idle, needs to do this in order to know the package was sent. 
 	radio.packet_sent = RFM_interruptHandler(radio, &radio.currentMode);
 }
