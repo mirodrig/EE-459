@@ -8,7 +8,7 @@
 
 #include "rfm69.h"
 #include <stdio.h>
-#include "spi.h"
+#include "../SPI/spi.h"
 #include "rfm69_reg.h"
 
 // #include "serial.h"

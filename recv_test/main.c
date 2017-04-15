@@ -9,8 +9,8 @@
 #include <avr/io.h> 
 #include <avr/interrupt.h>
 
-#include "rfm69.h"
-//#include "serial.h"
+#include "../RFM69/rfm69.h"
+#include "../serial_test/serial.h"
 
 #define Serial_rate 47
 
