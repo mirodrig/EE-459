@@ -1,5 +1,7 @@
-// for sending on the transceiver
-
+/***********************************************
+ * author: Marlin Rodriguez
+ * rfm69.c
+***********************************************/
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <util/delay.h>
@@ -7,8 +9,9 @@
 #include "rfm69.h"
 #include <stdio.h>
 #include "spi.h"
-// #include "serial.h"
 #include "rfm69_reg.h"
+
+// #include "serial.h"
 
 //radio reset pin
 #define RF_reset_pin 11 
@@ -21,9 +24,6 @@
 
 #define Max_Message_length 60
 
-/* Run to inialize the Radio communication 
-*/ 
-// complete
 void RFM_init(){
 	// manually reset the transceiver
 	DDRC |= DDC1;
@@ -47,48 +47,37 @@ void RFM_init(){
 	// RH_RF69_FIFOTHRESH_TXSTARTCONDITION_NOTEMPTY : 0x80  setting threshold for fif0 to 0x8f as recommended 
 
 	rfm_write(REG_FIFOTHRESH, RF_FIFOTHRESH_TXSTART_FIFONOTEMPTY | 0x0F); 
-    //RFM_writeReg(RH_RF69_REG_3C_FIFOTHRESH, RH_RF69_FIFOTHRESH_TXSTARTCONDITION_NOTEMPTY | 0x0f); // thresh 15 is default
 
     rfm_write(REG_TESTDAGC, RF_DAGC_IMPROVED_LOWBETA0);
-    //RFM_writeReg(RH_RF69_REG_6F_TESTDAGC, RH_RF69_TESTDAGC_CONTINUOUSDAGC_IMPROVED_LOWBETAOFF);
 
     rfm_write(REG_TESTPA1, RH_RF69_TESTPA1_NORMAL);
     rfm_write(REG_TESTPA2, RH_RF69_TESTPA2_NORMAL);
-    //RFM_writeReg(RH_RF69_REG_5A_TESTPA1, RH_RF69_TESTPA1_NORMAL);
-    //RFM_writeReg(RH_RF69_REG_5C_TESTPA2, RH_RF69_TESTPA2_NORMAL);
 
     char syncwords[] = {0x2d, 0x4d};
-    
     RFM_setSyncWords(syncwords);
-
     RHFM_setPreambleLength(4); 
-
     RFM_setFrequency(434.0);
 }
 
-// complete
 char RFM_Read_FIFO(char* buffer, char* currentMode){
 	cli(); // turn off interrupts
 	RFM_setMode(currentMode,0); // set to idle
 	
-	// set the chip select pin to LOW
 	DDRB |= 1 << DDB2;
-	PORTB |= (1 << PB2);
-	// digitalWrite(cs, 0); 
+	PORTB &= ~(1 << PB2); // set CS pin to LOW
 	
 	spi_transfer(REG_FIFO);
-	// SPI_transfer(RH_RF69_REG_00_FIFO);
 
-	char payload = spi_transfer(0); //get length of bytes 
-	int length = 0 ; 
+	char payload = spi_transfer(0x00); //get length of bytes 
+	uint8_t i;
 
-	if (payload != 0){
-		for (length = 0 ; length <payload ; length++){
-			buffer[length] = spi_transfer(0); 
+	if(payload != 0){
+		for(i = 0; i <payload; i++){
+			buffer[i] = spi_transfer(0x00);
 		}
 	}
-	PORTB &= ~(1 << PB2);
-	//digitalWrite(cs, 1); 
+	PORTB |= (1 << PB2);
+
 	sei(); 
 	return payload; // the length of the message 
 }
@@ -117,67 +106,53 @@ char RFM_recieve(struct RFM69* radio){
 		- currentMode :: currentMode of the radio, is in radio struct 
 */
 // complete
-void RFM_send(char* data, char* currentMode){
-	char length = sizeof(data); 
-	if ( length > Max_Message_length){
-		return ; 
+void RFM_send(char* data, char* currentMode, char dataSize){
+	if(dataSize > Max_Message_length){
+		return; 
 	}
 	cli(); 
+
 	RFM_setMode(currentMode,0); // set mode to idle 
+	
 	// wait for MODEREADY interrupt
-	while ( (rfm_read(REG_IRQFLAGS1) & 0x80) == 0x00){
-		// serial_outs("\rstuck loop 1\n\r");
-	} // wait for ModeReady in idle 
-	//char buf[50];
-	//snprintf(buf, 50, "\r0x%02X, 0x%02X\n\r", REG_IRQFLAGS1, rfm_read(REG_IRQFLAGS1));
-	//serial_outs(buf);
+	while ( (rfm_read(REG_IRQFLAGS1) & 0x80) == 0x00);
 
 	DDRB |= 1 << DDB2;
-	//PORTB |= (1 << PB2);
 	PORTB &= ~(1 << PB2);
-	// digitalWrite(cs, 0);
 
-	char message[2] = {REG_FIFO | 0x80, length};
+	char message[2] = {REG_FIFO | 0x80, dataSize};
 	
 	spi_multiWrite(message, 2);
-	serial_outs("\rwrote to SPI\n\r");
-	while(length--){
-		//serial_out(*data++);
-		serial_outs(data);
-		spi_transfer(*data++); 
+	//serial_outs("\rwrote to SPI\n\r");
+	uint8_t i;
+	for(i=0; i<dataSize; i++){
+		spi_transfer(data[i]);
+		serial_out(data[i]);
 	}
 	//serial_outs("\rstep1\n\r");
 	PORTB |= (1 << PB2);
-	//PORTB &= ~(1 << PB2);
-	// digitalWrite(cs, 1); 
+
 	sei();
-	//serial_outs("\rstep2\n\r");
+
 	RFM_setMode(currentMode,2); //TX 
-	//serial_outs("\rstep3\n\r");
-	// waits until the transceiver is in standby mode
-	// so far REG_OPMODE reads 0x0C
 
 	// wait until the PACKETSENT interrupt is set. If so, set the operating
 	// mode to STDBY mode.
 	while((rfm_read(REG_IRQFLAGS2) & RF_IRQFLAGS2_PACKETSENT) != RF_IRQFLAGS2_PACKETSENT);
-	RFM_setMode(currentMode, 0);
-
-	//while ((rfm_read(REG_OPMODE) & 0x1C) != 0x04){ // try REG_IRQFLAGS2 -> PACKETSENT
-	//} // we're now stuck here
-	serial_outs("\rpackets sent\n\r");
+	//RFM_setMode(currentMode, 0);
+	//serial_outs("\rpackets sent\n\r");
 }
 
 // complete
 char RFM_interruptHandler(struct RFM69 radio, char* currentMode) {
 	// serial_outputString("interrupt handeler");
-	char buf[50];
-	snprintf(buf, 50, "\rflag1: 0x%02X, flag2: 0x%02X\n\r", rfm_read(REG_IRQFLAGS1), rfm_read(REG_IRQFLAGS2));
-	serial_outs(buf);
+	//char buf[50];
+	//snprintf(buf, 50, "\rflag1: 0x%02X, flag2: 0x%02X\n\r", rfm_read(REG_IRQFLAGS1), rfm_read(REG_IRQFLAGS2));
+	//serial_outs(buf);
 
 	// if we are in RXMODE and PAYLOAD is ready
 	if (*currentMode == 1 && (rfm_read(REG_IRQFLAGS2) & 0x04)){
-		serial_outs("\rnew data\n\r");
-		// serial_outputString("new data ");
+		//serial_outs("\rnew data\n\r");
 		return 1;
 	}
 	// transmit
@@ -187,7 +162,7 @@ char RFM_interruptHandler(struct RFM69 radio, char* currentMode) {
 		return 1;
 	}
 	else{
-		serial_outs("\rreturn zero\n\r");
+		//serial_outs("\rreturn zero\n\r");
 		return 0;
 	}
 }
@@ -196,34 +171,17 @@ char RFM_interruptHandler(struct RFM69 radio, char* currentMode) {
 void RFM_spiConfig(){
 	spi_init();
 	cli();
+
 	SPCR = (SPCR & ~0x0C) | 0x00;
+	
 	SPCR &= ~(1 << DORD); // transmit MSB first
+	
 	SPCR = (SPCR & ~0x03) | (0x00 & 0x03); // this is just changing the first two bits of SPCR 
     SPSR = (SPSR & ~0x01) | ((0x00 >> 2) & 0x01); // this is just chaning the 2X bit 
+    
     sei();
-}
+} 
 
-/* This function configures the SPI communication for the radio 
-*/ 
-/*void RFM_spiConfig() {
-	pinMode(cs, OUTPUT); 
-	cli(); // stopping interrupts 
-	// spi values corresponding to datasheet 
-	SPI_setDataMode(SPI_MODE0); // setting the polarity of SPI 
-	SPI_setBitOrder(1); //want MSB first 
-	SPI_setClockDivider(SPI_CLOCK_DIV4);
-	sei(); // starting interrupts 
-}*/
-
-
-
-/* This function will write to a given register on the radio 
-	- address :: of the register to write to 
-	- data :: what you want to write to the register 
-	
-*/ 
-
-// complete
 void rfm_write(char addr, char value){
 	cli();
 	spi_ss_assert(); // set SS pin to LOW
@@ -234,20 +192,6 @@ void rfm_write(char addr, char value){
 	sei(); // enable interrupts
 }
 
-// write a single byte to a given register 
-/*void RFM_writeReg(char address, char data){
-	cli(); // disable global 
-	//MSB == 1 for write it is 0 for read 
-	// next 7 bits are address to write to 
-	digitalWrite(cs, 0); // select 
-	char message[2] = {address | RH_SPI_WRITE_MASK, data };
-	address |= RH_SPI_WRITE_MASK; // putting 1 in MSB 
-	SPI_multiWrite(message,2);
-	digitalWrite(cs, 1); 
-	sei(); 
-}*/
-
-// complete
 char rfm_read(char addr){
 	cli();
 	DDRB |= DDB2;
