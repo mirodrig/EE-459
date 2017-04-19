@@ -131,12 +131,12 @@ void stringConvert(float f, char *str, char size){
     pos = len;
     str[pos++] = '.';
 
-    while(pos < (size + len + 1)){  // process remaining digits
-        f = f - (float)value;  // hack off the whole part of the number
-        f *= 10;  // move next digit over
-        value = (int)f;  // get next digit
-        itoa(value, curr,10); // convert digit to string
-        str[pos++] = *curr; // add digit to result string and increment pointer
+    while(pos < (size + len + 1)){
+        f = f - (float)value;
+        f *= 10;
+        value = (int)f;
+        itoa(value, curr,10);
+        str[pos++] = *curr;
     }
  }
 
