@@ -2,6 +2,7 @@
 #include <util/delay.h>
 #include <avr/interrupt.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 // define parameters
 #define FOSC 9830400 // clock frequency
@@ -11,8 +12,11 @@
 
 char buffer[100];
 int count = 0;
+bool flag = false;
 
 void serial_init(uint8_t ubrr);
+void serial_out(char);
+char serial_in(void);
 
 int main(void) {
   DDRD |= (1 << PD1); /* Set PD1 for output */ 
@@ -31,6 +35,19 @@ int main(void) {
               // 1 stop bit, 8 data bits
   
   while (1) {
+    /*
+    if(flag == true){
+      buffer[count] = '\0';
+      serial_outs(buffer);
+      int c;
+      for(c = 0; c < 100; c++){
+        buffer[c] = '\0';
+      }
+      count = 0;
+      flag = false;
+    }
+    */
+    //serial_out(serial_in());  
   }               // Loop forever
     return 0;   /* never reached */
 }
@@ -50,6 +67,12 @@ void serial_out(char ch){
   UDR0 = ch;
 }
 
+char serial_in()
+{
+  while (!(UCSR0A & (1 << RXC0)));
+  return UDR0;
+}
+
 void serial_outs(char s[]){
   int i = 0;
   while(s[i] != '\0'){
@@ -60,14 +83,7 @@ void serial_outs(char s[]){
 
 void storeCh(char ch){
   if(ch == '$'){
-    buffer[count] = '\r';
-    serial_outs(buffer);
-    int c;
-    for(c = 0; c < 100; c++){
-      buffer[c] = '\0';
-    }
-    count = 0;
-    ch = '$';
+    flag = true;
   }
   buffer[count] = ch;
   count = count + 1;
@@ -75,5 +91,5 @@ void storeCh(char ch){
 
 ISR(USART_RX_vect){
   storeCh(UDR0);
-  //serial_out(UDR0);
+  serial_out(UDR0);
 }
