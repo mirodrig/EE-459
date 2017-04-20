@@ -52,8 +52,9 @@ void RFM_init(){
 
     rfm_write(REG_TESTPA1, RH_RF69_TESTPA1_NORMAL);
     rfm_write(REG_TESTPA2, RH_RF69_TESTPA2_NORMAL);
-
-    char syncwords[] = {0x2d, 0x4d};
+	
+    char syncwords[] = {0x7D, 0x8D};
+    // char syncwords[] = {0x2d, 0x4d};
     RFM_setSyncWords(syncwords);
     RHFM_setPreambleLength(4); 
     RFM_setFrequency(434.0);

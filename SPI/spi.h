@@ -9,6 +9,7 @@
 #include <util/delay.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <avr/interrupt.h>
 
 /* define SPI pins and ports */
 #define SPI_DDR DDRB

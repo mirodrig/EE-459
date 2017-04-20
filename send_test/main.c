@@ -43,7 +43,8 @@ int main(void){
 	RFM_init();
 
 	sei();
-	char message[] = "What's up";
+	// char message[] = "What's up";
+	char message[] = "Hello there";
 	char size = sizeof(message);
 
 	while (1){
