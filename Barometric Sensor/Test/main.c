@@ -4,12 +4,10 @@
 #include "MPL3115A2.h"
 #include "I2C.h"
 #include "sci.h"
-#include <avr/Interrupt.h>
 #include <util/delay.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include "serial.h"
 #include <math.h>
 
 //#define MPL3115A2_I2C_ADDRESS 0xC0
