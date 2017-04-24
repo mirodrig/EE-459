@@ -8,13 +8,6 @@
 #include <stdio.h>
 #include <string.h>
 
-// for the GPS. This could be more organized, but leave like this for now.
-void gps_serial_init(uint8_t ubrr){
-	UBRR0 = ubrr;
-	UCSR0B |= (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0);
-	UCSR0C = (3 << UCSZ00);
-}
-
 // initialize the serial port. Takes in no parameters.
 void serial_init(uint8_t ubrr){
 	UBRR0 = ubrr; // set the BAUD rate
