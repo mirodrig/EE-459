@@ -172,6 +172,13 @@ int main(void){
 	gps_serial_init(MYUBRR);
 	SPI_MasterInit(); // initialize SPI
 	
+	// set pins that are connected to buttons as input
+	DDRD &= ~(1 << PD5); // set PD5 (pin 11) as input
+	DDRD &= ~(1 << PD6); // set PD6 (pin 12) as input
+	DDRD &= ~(1 << PD7); // set PD7 (pin 13) as input
+	DDRB &= ~(1 << PB0); // set PB0 (pin 14) as input
+
+	
 	// initial GPS parameters
     struct GPS gps;
 	gps.index = 0; 
@@ -196,16 +203,16 @@ int main(void){
 	
     while (1){
     	// if we have received the radio signal, record friend's GPS position
-    	if(radio.receiveDataFlag){
+    	/*if(radio.receiveDataFlag){
         	_delay_ms(2000); // sample every 2 sec
         	radio.receiveDataFlag = 0; // reset the receive flag
             radio.buffer_length = RFM_Read_FIFO(radio.buffer, &radio.currentMode);
             // set to RXMODE after receiving information
             RFM_setMode(&radio.currentMode, 1);
             serial_outputString(radio.buffer);
-		}
+		}*/
 		// if no reception, record own GPS position
-		else{
+		/*else{
         	cli(); // disable interrupts
         	UCSR0B |= (1 << RXCIE0); // enable RX interrupt
         	_delay_ms(2000); // sample every 2 sec
@@ -214,8 +221,22 @@ int main(void){
         	printData(&gps);
         	UCSR0B &= ~(1 << RXCIE0); // disable RX interrupt
         	sei(); // enable interrupts
+        }*/
+        
+        // poll all pins connected to buttons
+        if((PIND & (1 << PD5)) == 0){
+        	serial_outputString("PD5"); 
         }
- 	}
+        else if((PIND & (1 << PD6)) == 0){
+        	serial_outputString("PD6");
+        }
+        else if((PIND & (1 << PD7)) == 0){
+        	serial_outputString("PD7");
+        }
+        else if((PINB & (1 << PB0)) == 0){
+        	serial_outputString("PB0");
+        }
+    }
     return 0;   /* never reached */
 }
 
