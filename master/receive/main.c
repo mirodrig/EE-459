@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include "../../RFM69/rfm69.h"
 #include "../../serial_test/serial.h"
+#include "../../serial_display/lcd.h"
 
 // define parameters
 #define FOSC 9830400 // clock frequency
@@ -146,14 +147,21 @@ void stringConvert(float f, char *str, char size){
  }
 
 void printData(struct GPS* gps){
-    char buffer[50];
-    stringConvert(gps->latitude, buffer, 6);
-    serial_outputString("My Latitude: ");
-    serial_outputString(buffer);
+    lcd_clear();
+    char buffer[100];
+    stringConvert(gps->latitude, buffer, 3);
+    lcd_out(row1_col1, "Latitude:");
+    lcd_out(0x0A, buffer);
 
-    stringConvert(gps->longitude, buffer, 6);
-    serial_outputString("My Longitude: ");
-    serial_outputString(buffer); 
+    stringConvert(gps->longitude, buffer, 3);
+    lcd_out(row2_col1, "Longitude:");
+    lcd_out(0x4B, buffer);
+
+    lcd_out(row3_col1, "Satellites: ");
+    sprintf(buffer, "%d", gps->satellites);
+    lcd_out(0x20, buffer);
+
+    lcd_out(0x67, "");
 }
 
 struct RFM69 radio; // radio object
@@ -168,6 +176,8 @@ void interruptInit(){
 }
 
 int main(void){
+    lcd_init();
+    serial_out(0xFE); // clears the screen
 	interruptInit(); // initialize interrupt
 	gps_serial_init(MYUBRR);
 	SPI_MasterInit(); // initialize SPI
@@ -177,7 +187,6 @@ int main(void){
 	DDRD &= ~(1 << PD6); // set PD6 (pin 12) as input
 	DDRD &= ~(1 << PD7); // set PD7 (pin 13) as input
 	DDRB &= ~(1 << PB0); // set PB0 (pin 14) as input
-
 	
 	// initial GPS parameters
     struct GPS gps;
@@ -201,41 +210,69 @@ int main(void){
     RFM_init(); // initialize RFM69
 	RFM_setMode(&radio.currentMode, 1); // set to RXMODE
 	
+    //States
+    int state = 3;
+
     while (1){
     	// if we have received the radio signal, record friend's GPS position
-    	/*if(radio.receiveDataFlag){
-        	_delay_ms(2000); // sample every 2 sec
-        	radio.receiveDataFlag = 0; // reset the receive flag
-            radio.buffer_length = RFM_Read_FIFO(radio.buffer, &radio.currentMode);
-            // set to RXMODE after receiving information
-            RFM_setMode(&radio.currentMode, 1);
-            serial_outputString(radio.buffer);
-		}*/
-		// if no reception, record own GPS position
-		/*else{
-        	cli(); // disable interrupts
-        	UCSR0B |= (1 << RXCIE0); // enable RX interrupt
+  //   	if(radio.receiveDataFlag){
+  //       	_delay_ms(2000); // sample every 2 sec
+  //       	radio.receiveDataFlag = 0; // reset the receive flag
+  //           radio.buffer_length = RFM_Read_FIFO(radio.buffer, &radio.currentMode);
+  //           // set to RXMODE after receiving information
+  //           RFM_setMode(&radio.currentMode, 1);
+  //           //serial_outputString(radio.buffer);
+		// }
+		
+  //       // if no reception, record own GPS position
+		// else{
+  //       	cli(); // disable interrupts
+  //       	UCSR0B |= (1 << RXCIE0); // enable RX interrupt
         	_delay_ms(2000); // sample every 2 sec
     		serial_out(serial_in());
     		readSerial(&gps);
-        	printData(&gps);
-        	UCSR0B &= ~(1 << RXCIE0); // disable RX interrupt
-        	sei(); // enable interrupts
-        }*/
+        // 	//printData(&gps);
+        // 	UCSR0B &= ~(1 << RXCIE0); // disable RX interrupt
+        // 	sei(); // enable interrupts
+        // }
         
-        // poll all pins connected to buttons
+        // State Change poll all pins connected to buttons
         if((PIND & (1 << PD5)) == 0){
-        	serial_outputString("PD5"); 
+            state = 1;
         }
         else if((PIND & (1 << PD6)) == 0){
-        	serial_outputString("PD6");
+        	state = 2;
         }
         else if((PIND & (1 << PD7)) == 0){
-        	serial_outputString("PD7");
+            state = 3;
         }
         else if((PINB & (1 << PB0)) == 0){
-        	serial_outputString("PB0");
+        	state = 4;
         }
+
+        // States
+        if(state == 1){
+            lcd_out(row1_col1, "one");
+            _delay_ms(5000);
+            lcd_clear();
+        }
+        else if(state == 2){
+            lcd_out(row1_col1, "two");
+            _delay_ms(5000);
+            lcd_clear();
+        }
+        else if(state == 3){
+            printData(&gps);
+            _delay_ms(1000);
+        }
+        else if(state == 4){
+            lcd_out(row1_col1, "four");
+            _delay_ms(5000);
+            lcd_clear();
+        }
+        else
+            lcd_out(row1_col1, "menu");
+
     }
     return 0;   /* never reached */
 }

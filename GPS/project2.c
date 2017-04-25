@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <avr/interrupt.h>
 #include <stdbool.h>
+#include "../serial_display/lcd.h"
 
 // define parameters
 #define FOSC 9830400 // clock frequency
@@ -19,21 +20,21 @@ struct GPS{
 };
 
 // initialize the serial port. Takes in no parameters.
-void serial_init(uint8_t ubrr){
-  UBRR0 = ubrr; // set the BAUD rate
-  UCSR0B |= (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0); // turn on the transmitter
-  UCSR0C = (3 << UCSZ00); // set for async operation 8 data bits, one stop bit
-}
+// void serial_init(uint8_t ubrr){
+//   UBRR0 = ubrr; // set the BAUD rate
+//   UCSR0B |= (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0); // turn on the transmitter
+//   UCSR0C = (3 << UCSZ00); // set for async operation 8 data bits, one stop bit
+// }
 
-char serial_in(){
-  while (!(UCSR0A & (1 << RXC0)));
-  return UDR0;
-}
+// char serial_in(){
+//   while (!(UCSR0A & (1 << RXC0)));
+//   return UDR0;
+// }
 
-void serial_out(char ch){
-  while((UCSR0A & (1 << UDRE0)) == 0);
-  UDR0 = ch;
-}
+// void serial_out(char ch){
+//   while((UCSR0A & (1 << UDRE0)) == 0);
+//   UDR0 = ch;
+// }
 
 void serial_outputString (char* text){
     char i; 
@@ -42,6 +43,13 @@ void serial_outputString (char* text){
     }
     serial_out(0x0D);
     serial_out(0x0A);
+}
+
+void lcd_outputString(char pos, char* s){
+    serial_out(0xFE); // set the cursor position
+    serial_out(0x45);
+    serial_out((char) pos); // positions cursor
+    serial_outputString(s); // outputs the string
 }
 
 void convertGPPGA(struct GPS* gps){
@@ -141,32 +149,47 @@ void stringConvert(float f, char *str, char size){
  }
 
 void printData(struct GPS* gps){
-    char buffer[50];
-    stringConvert(gps->latitude, buffer, 6);
-    serial_outputString("Latitude: ");
-    serial_outputString(buffer);
+    // char buffer[50];
+    // stringConvert(gps->latitude, buffer, 6);
+    // serial_outputString("Latitude: ");
+    // serial_outputString(buffer);
 
-    stringConvert(gps->longitude, buffer, 6);
-    serial_outputString("Longitude: ");
-    serial_outputString(buffer);
+    // stringConvert(gps->longitude, buffer, 6);
+    // serial_outputString("Longitude: ");
+    // serial_outputString(buffer);
 
-    stringConvert(gps->altitude, buffer, 1);
-    serial_outputString("Altitude: ");
-    serial_outputString(buffer);
+    // stringConvert(gps->altitude, buffer, 1);
+    // serial_outputString("Altitude: ");
+    // serial_outputString(buffer);
 
-    sprintf(buffer, "Connected Satellites: %d", gps->satellites); 
-    serial_outputString(buffer); 
+    // sprintf(buffer, "Satellites: %d", gps->satellites); 
+    // serial_outputString(buffer);
+
+    char buffer[100];
+    stringConvert(gps->latitude, buffer, 3);
+    lcd_out(row1_col1, "Latitude:");
+    lcd_out(0x0A, buffer);
+
+    stringConvert(gps->longitude, buffer, 3);
+    lcd_out(row2_col1, "Longitude:");
+    lcd_out(0x4B, buffer);
+
+    lcd_out(row3_col1, "Satellites: ");
+    sprintf(buffer, "%d", gps->satellites);
+    lcd_out(0x20, buffer);
 }
 
 int main(void){
 	serial_init(MYUBRR);
+    UCSR0B |= (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0);
     struct GPS gps;
 	gps.index = 0; 
     while (1){
-        _delay_ms(2000);
+        lcd_clear();
     	serial_out(serial_in());
     	readSerial(&gps);
-        printData(&gps); 
+        printData(&gps);
+        _delay_ms(2000);
  	}
     return 0;   /* never reached */
 }
