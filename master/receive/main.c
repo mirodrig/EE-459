@@ -1,18 +1,22 @@
 #include <avr/io.h>
+#include <avr/interrupt.h>
 #include <util/delay.h>
+#include <util/twi.h>
 #include <stdio.h>
 #include <string.h> 
 #include <stdlib.h>
-#include <avr/interrupt.h>
 #include <stdbool.h>
+#include <math.h>
 #include "../../RFM69/rfm69.h"
 #include "../../serial_test/serial.h"
 #include "../../serial_display/lcd.h"
+#include "../../Barometric_Sensor/MPL3115A2.h"
 
 // define parameters
 #define FOSC 9830400 // clock frequency
 #define BAUD 9600 // for serial interface
 #define MYUBRR 47
+//#define BDIV ((FOSC/10000 - 16) / 2)+1 // puts I2C rate just below 100kHz
 
 struct GPS{
     char buffer[100], index;
@@ -210,24 +214,28 @@ int main(void){
     RFM_init(); // initialize RFM69
 	RFM_setMode(&radio.currentMode, 1); // set to RXMODE
 	
+	// initialize the barometric sensors
+	MPLinit();
+	_delay_ms(100); // wait (found in the code)
+	
     //States
     int state = 3;
 
     while (1){
     	// if we have received the radio signal, record friend's GPS position
-  //   	if(radio.receiveDataFlag){
-  //       	_delay_ms(2000); // sample every 2 sec
-  //       	radio.receiveDataFlag = 0; // reset the receive flag
-  //           radio.buffer_length = RFM_Read_FIFO(radio.buffer, &radio.currentMode);
-  //           // set to RXMODE after receiving information
-  //           RFM_setMode(&radio.currentMode, 1);
-  //           //serial_outputString(radio.buffer);
-		// }
+	   	//if(radio.receiveDataFlag){
+		       	//_delay_ms(2000); // sample every 2 sec
+		       	//radio.receiveDataFlag = 0; // reset the receive flag
+	           //radio.buffer_length = RFM_Read_FIFO(radio.buffer, &radio.currentMode);
+	           // set to RXMODE after receiving information
+	           //RFM_setMode(&radio.currentMode, 1);
+	           //serial_outputString(radio.buffer);
+		//}
 		
-  //       // if no reception, record own GPS position
+	    // if no reception, record own GPS position
 		// else{
-  //       	cli(); // disable interrupts
-  //       	UCSR0B |= (1 << RXCIE0); // enable RX interrupt
+	       	//cli(); // disable interrupts
+	       	// UCSR0B |= (1 << RXCIE0); // enable RX interrupt
         	_delay_ms(2000); // sample every 2 sec
     		serial_out(serial_in());
     		readSerial(&gps);
@@ -235,6 +243,23 @@ int main(void){
         // 	UCSR0B &= ~(1 << RXCIE0); // disable RX interrupt
         // 	sei(); // enable interrupts
         // }
+        
+        // initialize variables for the sensors
+        float pascals = getPressure();
+        char buffer9[30];
+        pascals /= 3377.0;
+        FloatToStringNew(buffer9, pascals, 2);
+        //snprintf(buffer9, 30, "Pressure: %f In. Hg", pascals);
+        
+        float alt = getAltitude();
+        char buffer10[30];
+        FloatToStringNew(buffer10, alt, 2);
+        //snprintf(buffer10, 30, "Altitude: %f meters", alt);
+        
+        float tempC = getTemperature();
+        char buffer11[30];
+        FloatToStringNew(buffer11, tempC, 2);
+        //snprintf(buffer11, 30, "Temp: %f C", tempC);
         
         // State Change poll all pins connected to buttons
         if((PIND & (1 << PD5)) == 0){
@@ -252,26 +277,39 @@ int main(void){
 
         // States
         if(state == 1){
+            lcd_clear(); // clear old screen content
             lcd_out(row1_col1, "one");
             _delay_ms(5000);
             lcd_clear();
         }
+        // if the state is 2, we can display sensor data
         else if(state == 2){
-            lcd_out(row1_col1, "two");
+        	lcd_clear(); // clear old screen content
+        	lcd_out(row1_col1, "Press.(In. Hg): ");
+        	lcd_out(0x10, buffer9);
+        	
+        	lcd_out(row2_col1, "Altitude(m): ");
+        	lcd_out(0x4D, buffer10);
+        	
+        	lcd_out(row3_col1, "Temp(C): ");
+        	lcd_out(0x1D, buffer11);
             _delay_ms(5000);
             lcd_clear();
         }
         else if(state == 3){
+            lcd_clear(); // clear old content
             printData(&gps);
             _delay_ms(1000);
         }
         else if(state == 4){
+        	lcd_clear(); // clear old content
             lcd_out(row1_col1, "four");
             _delay_ms(5000);
             lcd_clear();
         }
         else
             lcd_out(row1_col1, "menu");
+            _delay_ms(1000); // wait 1 sec
 
     }
     return 0;   /* never reached */
