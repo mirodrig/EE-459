@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
+#include <ctype.h>
 #include "../../RFM69/rfm69.h"
 #include "../../serial_test/serial.h"
 #include "../../serial_display/lcd.h"
@@ -222,23 +223,13 @@ int main(void){
     int state = 3;
 
     while (1){
-    	// if we have received the radio signal, record friend's GPS position
-	   	//if(radio.receiveDataFlag){
-		       	//_delay_ms(2000); // sample every 2 sec
-		       	//radio.receiveDataFlag = 0; // reset the receive flag
-	           //radio.buffer_length = RFM_Read_FIFO(radio.buffer, &radio.currentMode);
-	           // set to RXMODE after receiving information
-	           //RFM_setMode(&radio.currentMode, 1);
-	           //serial_outputString(radio.buffer);
-		//}
-		
 	    // if no reception, record own GPS position
 		// else{
 	       	//cli(); // disable interrupts
 	       	// UCSR0B |= (1 << RXCIE0); // enable RX interrupt
-        	_delay_ms(2000); // sample every 2 sec
-    		serial_out(serial_in());
-    		readSerial(&gps);
+        _delay_ms(2000); // sample every 2 sec
+    	serial_out(serial_in());
+    	readSerial(&gps);
         // 	//printData(&gps);
         // 	UCSR0B &= ~(1 << RXCIE0); // disable RX interrupt
         // 	sei(); // enable interrupts
@@ -276,9 +267,34 @@ int main(void){
         }
 
         // States
+        // if the state is 1, then we will send a msg requesting for other's location
         if(state == 1){
             lcd_clear(); // clear old screen content
-            lcd_out(row1_col1, "one");
+            
+			if(radio.receiveDataFlag){
+				_delay_ms(500);
+				radio.receiveDataFlag = 0; // reset the receive flag
+				radio.buffer_length = RFM_Read_FIFO(radio.buffer, &radio.currentMode);
+				//set to RXMODE after receiving information
+				RFM_setMode(&radio.currentMode, 1);
+				
+				// iterate through the radio to determine what to print on LCD screen
+				//int8_t i;
+				//char buf1[20];
+				//char buf2[20];
+				//char buf3[20];
+				//char buf4[20];
+				//for(i=0; i<sizeof(radio.buffer); i++){
+					// TODO: get four separate char[] from the received char[]
+					// while there is no digit, print the element onto the LCD screen
+				//}
+				//lcd_out(row1_col1, );
+				//lcd_out(row2_col1, );
+				//lcd_out(row3_col1, );
+				//lcd_out(row4_col1, );
+				
+				lcd_out(row1_col1, radio.buffer); // TODO: get it to print correctly
+			}
             _delay_ms(5000);
             lcd_clear();
         }
