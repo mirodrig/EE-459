@@ -194,7 +194,7 @@ int main(void){
     RFM_init(); // initialize RFM69
 
 	// message that acts as a dummy 
-	char msg[] = "Friend's Latitude:\r\n32.0204\r\nFriend's Longitude:\r\n-118.2891";
+	char msg[] = "Friend's Latitude: 32.0204 Friend's Longitude: -118.2891";
 	char msgSize = sizeof(msg);
 	
     while (1){
