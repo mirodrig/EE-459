@@ -13,6 +13,8 @@
 #include "../../serial_display/lcd.h"
 #include "../../Barometric_Sensor/MPL3115A2.h"
 
+#define pi 3.14159265358979323846 // do we need it???
+
 // define parameters
 #define FOSC 9830400 // clock frequency
 #define BAUD 9600 // for serial interface
@@ -169,6 +171,27 @@ void printData(struct GPS* gps){
     lcd_out(0x67, "");
 }
 
+double deg2rad(double);
+double rad2deg(double);
+
+double distance(double lat1, double lon1, double lat2, double lon2){
+  double theta, dist;
+  theta = lon1 - lon2;
+  dist = sin(deg2rad(lat1)) * sin(deg2rad(lat2)) + cos(deg2rad(lat1)) * cos(deg2rad(lat2)) * cos(deg2rad(theta));
+  dist = acos(dist);
+  dist = rad2deg(dist);
+  dist = dist * 60 * 1.1515; /// units are in miles
+  return (dist);
+}
+
+double deg2rad(double deg) {
+  return (deg * pi / 180);
+}
+
+double rad2deg(double rad) {
+  return (rad * 180 / pi);
+}
+
 struct RFM69 radio; // radio object
 
 void interruptInit(){
@@ -220,38 +243,26 @@ int main(void){
 	_delay_ms(100); // wait (found in the code)
 	
     //States
-    int state = 3;
+    int state = 5; // this way, "menu" will be displayed
+    lcd_clear();
+    _delay_ms(100);
+    lcd_out(row1_col1, "Welcome");
+    _delay_ms(3000);
+    lcd_clear();
 
     while (1){
 	    // if no reception, record own GPS position
 		// else{
 	       	//cli(); // disable interrupts
 	       	// UCSR0B |= (1 << RXCIE0); // enable RX interrupt
-        _delay_ms(2000); // sample every 2 sec
+        _delay_ms(500); // sample every 2 sec
     	serial_out(serial_in());
     	readSerial(&gps);
         // 	//printData(&gps);
         // 	UCSR0B &= ~(1 << RXCIE0); // disable RX interrupt
         // 	sei(); // enable interrupts
         // }
-        
-        // initialize variables for the sensors
-        float pascals = getPressure();
-        char buffer9[30];
-        pascals /= 3377.0;
-        FloatToStringNew(buffer9, pascals, 2);
-        //snprintf(buffer9, 30, "Pressure: %f In. Hg", pascals);
-        
-        float alt = getAltitude();
-        char buffer10[30];
-        FloatToStringNew(buffer10, alt, 2);
-        //snprintf(buffer10, 30, "Altitude: %f meters", alt);
-        
-        float tempC = getTemperature();
-        char buffer11[30];
-        FloatToStringNew(buffer11, tempC, 2);
-        //snprintf(buffer11, 30, "Temp: %f C", tempC);
-        
+
         // State Change poll all pins connected to buttons
         if((PIND & (1 << PD5)) == 0){
             state = 1;
@@ -273,34 +284,53 @@ int main(void){
             
 			if(radio.receiveDataFlag){
 				_delay_ms(500);
+				char buf1[20] = "32.0204";
+				char buf2[20] = "-118.2891";
+				double lat2 = 34.0204;
+				double long2 = -121.2891;
+				
 				radio.receiveDataFlag = 0; // reset the receive flag
 				radio.buffer_length = RFM_Read_FIFO(radio.buffer, &radio.currentMode);
 				//set to RXMODE after receiving information
 				RFM_setMode(&radio.currentMode, 1);
 				
 				// iterate through the radio to determine what to print on LCD screen
-				//int8_t i;
-				//char buf1[20];
-				//char buf2[20];
-				//char buf3[20];
-				//char buf4[20];
-				//for(i=0; i<sizeof(radio.buffer); i++){
-					// TODO: get four separate char[] from the received char[]
-					// while there is no digit, print the element onto the LCD screen
-				//}
-				//lcd_out(row1_col1, );
-				//lcd_out(row2_col1, );
-				//lcd_out(row3_col1, );
-				//lcd_out(row4_col1, );
+				lcd_out(row1_col1, "Friend's Latitude:");
+				lcd_out(row2_col1, buf1);
+				lcd_out(row3_col1, "Friend's Longitude:");
+				lcd_out(row4_col1, buf2);
 				
-				lcd_out(row1_col1, radio.buffer); // TODO: get it to print correctly
+				// lat1, long1, lat2, long2
+				double dist = distance((double)gps.latitude, (double)gps.longitude, lat2, long2);
+				char A[30];
+				FloatToStringNew(A,(float)dist,2);
+				_delay_ms(3000);
+				lcd_clear();
+				_delay_ms(100);
+				lcd_out(row1_col1, A);
+				lcd_out(0x09, "miles");
+				//lcd_out(row1_col1, radio.buffer); // TODO: get it to print correctly
 			}
-            _delay_ms(5000);
-            lcd_clear();
+            _delay_ms(1000);
         }
         // if the state is 2, we can display sensor data
         else if(state == 2){
         	lcd_clear(); // clear old screen content
+            // initialize variables for the sensors
+        	float pascals = getPressure();
+        	char buffer9[50];
+        	pascals /= 3377.0;
+        	FloatToStringNew(buffer9, pascals, 2);
+        
+        	float alt = getAltitude();
+        	char buffer10[50];
+        	FloatToStringNew(buffer10, alt, 2);
+        
+        	float tempC = getTemperature();
+        	char buffer11[50];
+        	FloatToStringNew(buffer11, tempC, 2);
+        
+       		_delay_ms(100);
         	lcd_out(row1_col1, "Press.(In. Hg): ");
         	lcd_out(0x10, buffer9);
         	
@@ -309,8 +339,7 @@ int main(void){
         	
         	lcd_out(row3_col1, "Temp(C): ");
         	lcd_out(0x1D, buffer11);
-            _delay_ms(5000);
-            lcd_clear();
+            _delay_ms(1000);
         }
         else if(state == 3){
             lcd_clear(); // clear old content
@@ -319,13 +348,12 @@ int main(void){
         }
         else if(state == 4){
         	lcd_clear(); // clear old content
-            lcd_out(row1_col1, "four");
-            _delay_ms(5000);
-            lcd_clear();
+            lcd_out(row1_col1, "menu");
+            _delay_ms(1000);
         }
         else
             lcd_out(row1_col1, "menu");
-            _delay_ms(1000); // wait 1 sec
+            _delay_ms(500); // wait 1 sec
 
     }
     return 0;   /* never reached */
