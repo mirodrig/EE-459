@@ -9,9 +9,9 @@
 #include <math.h>
 #include <ctype.h>
 #include "../../RFM69/rfm69.h"
-#include "../../serial_test/serial.h"
 #include "../../serial_display/lcd.h"
 #include "../../Barometric_Sensor/MPL3115A2.h"
+#include "../../Accelerametor/LSM9DS0.h"
 
 #define pi 3.14159265358979323846 // do we need it???
 
@@ -193,12 +193,18 @@ double rad2deg(double rad) {
 }
 
 struct RFM69 radio; // radio object
+int steps = -2;
+int count = 0;
+int state;
 
 void interruptInit(){
-	DDRD &= ~(1 <<DDD2) ; 
-    PORTD |= (1<<PORTD2); 
-    EICRA |= (1<<ISC00) | (1<<ISC01); // set it for rising edge 
-    EIMSK |= (1 << INT0); 
+	DDRD &= ~(1 << DDD2);
+	DDRD &= ~(1 << DDD3);
+	PORTD |= (1<<PORTD2);
+	PORTD |= (1<<PORTD3); 
+    EICRA |= (1<<ISC00) | (1<<ISC01) | (1<<ISC10); // set it for rising edge 
+    EIMSK |= (1 << INT0) | (1 << INT1); 
+    cli(); // just added
     sei();
     PCMSK0 |= 0x80;
 }
@@ -209,6 +215,7 @@ int main(void){
 	interruptInit(); // initialize interrupt
 	gps_serial_init(MYUBRR);
 	SPI_MasterInit(); // initialize SPI
+	LSM_begin(); // start accelerometer
 	
 	// set pins that are connected to buttons as input
 	DDRD &= ~(1 << PD5); // set PD5 (pin 11) as input
@@ -243,9 +250,10 @@ int main(void){
 	_delay_ms(100); // wait (found in the code)
 	
     //States
-    int state = 5; // this way, "menu" will be displayed
+    state = 5; // this way, "menu" will be displayed
     lcd_clear();
-    _delay_ms(100);
+    lcd_clear();
+    _delay_ms(500);
     lcd_out(row1_col1, "Welcome");
     _delay_ms(3000);
     lcd_clear();
@@ -281,7 +289,7 @@ int main(void){
         // if the state is 1, then we will send a msg requesting for other's location
         if(state == 1){
             lcd_clear(); // clear old screen content
-            
+            lcd_clear();
 			if(radio.receiveDataFlag){
 				_delay_ms(500);
 				char buf1[20] = "32.0204";
@@ -316,21 +324,23 @@ int main(void){
         // if the state is 2, we can display sensor data
         else if(state == 2){
         	lcd_clear(); // clear old screen content
+        	lcd_clear();
             // initialize variables for the sensors
+        	cli();
         	float pascals = getPressure();
         	char buffer9[50];
         	pascals /= 3377.0;
         	FloatToStringNew(buffer9, pascals, 2);
-        
+        	//cli();
         	float alt = getAltitude();
         	char buffer10[50];
         	FloatToStringNew(buffer10, alt, 2);
         
         	float tempC = getTemperature();
-        	char buffer11[50];
+        	char buffer11[20];
         	FloatToStringNew(buffer11, tempC, 2);
         
-       		_delay_ms(100);
+       		_delay_ms(200);
         	lcd_out(row1_col1, "Press.(In. Hg): ");
         	lcd_out(0x10, buffer9);
         	
@@ -339,20 +349,38 @@ int main(void){
         	
         	lcd_out(row3_col1, "Temp(C): ");
         	lcd_out(0x1D, buffer11);
+        	sei();
             _delay_ms(1000);
         }
         else if(state == 3){
             lcd_clear(); // clear old content
+            lcd_clear();
+            cli();
             printData(&gps);
             _delay_ms(1000);
+            sei();
         }
         else if(state == 4){
         	lcd_clear(); // clear old content
-            lcd_out(row1_col1, "menu");
+        	lcd_clear();
+        	_delay_ms(500);
+            if(count < steps){
+            	lcd_out(row1_col1, "MOVING");
+            	//serial_outputString("\r\nMOVING\r\n");
+                count = steps;
+                _delay_ms(500);
+            }
+            else{
+            	lcd_out(row1_col1, "NOT MOVING");
+            	//serial_outputString("\r\nNOT MOVING\r\n");
+			}
+			char stepBuf[20] ; 
+    		sprintf(stepBuf,"steps : %d",steps);
+			lcd_out(row2_col1, stepBuf);
             _delay_ms(1000);
         }
         else
-            lcd_out(row1_col1, "menu");
+            // lcd_out(row1_col1, "menu");
             _delay_ms(500); // wait 1 sec
 
     }
@@ -362,4 +390,15 @@ int main(void){
 ISR(INT0_vect){
 	// serial_outputString("interrupt");
 	radio.receiveDataFlag = RFM_interruptHandler(radio, &radio.currentMode);
+}
+
+ISR(INT1_vect){
+	steps++ ;  
+    char buf[20] ; 
+    sprintf(buf,"steps : %d",steps);
+    if(state == 4){
+    	lcd_out(row2_col1, buf);
+    }
+    //serial_outputString(buf);
+	_delay_ms(20);            
 }
