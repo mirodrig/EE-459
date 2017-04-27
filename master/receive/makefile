@@ -1,7 +1,7 @@
 DEVICE     = atmega328p
 CLOCK      = 9830400
 PROGRAMMER = -c usbtiny -P usb
-OBJECTS    = main.o ../../RFM69/rfm69.o
+OBJECTS    = main.o ../../RFM69/rfm69.o ../../Accelerametor/LSM9DS0.o ../../I2C/i2c.o ../../Accelerametor/serial.o ../../Barometric_Sensor/MPL3115A2.o
 FUSES      = -U hfuse:w:0xd9:m -U lfuse:w:0xe0:m
 
 # Fuse Low Byte = 0xe0   Fuse High Byte = 0xd9   Fuse Extended Byte = 0xff
