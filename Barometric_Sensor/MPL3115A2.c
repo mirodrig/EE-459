@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <float.h>
 #include "MPL3115A2.h"
+#include "../I2C/i2c.h"
 #include <util/delay.h>
 # include <stddef.h>
 #include <avr/Interrupt.h>
@@ -91,7 +92,7 @@ float getAltitude(void)
 
   float altitude = (float)alt;
   altitude /= 16.0;
-  altitude += 20.0;
+  altitude -= 20.0;
   
   return altitude;
 }
@@ -137,7 +138,7 @@ uint8_t read8(uint8_t device_addr,uint8_t *a,uint16_t size_a ,uint8_t *p, uint16
     status = i2c_io(device_addr, a, size_a, NULL, 0,p, n);
     return(status);
 }
-void FloatToStringNew(char *str, float f, char size)
+void FloatToStringNew_1(char *str, float f, char size)
 
 {
 
