@@ -153,9 +153,9 @@ void stringConvert(float f, char *str, char size){
     }
  }
 
-void printData(struct GPS* gps){
-    lcd_clear();
-    char buffer[100];
+void printData(struct GPS* gps, char buffer[]){
+    //lcd_clear();
+    //char buffer[100];
     stringConvert(gps->latitude, buffer, 3);
     lcd_out(row1_col1, "Latitude:");
     lcd_out(0x0A, buffer);
@@ -289,11 +289,11 @@ int main(void){
         // if the state is 1, then we will send a msg requesting for other's location
         if(state == 1){
             lcd_clear(); // clear old screen content
-            lcd_clear();
+            //lcd_clear();
 			if(radio.receiveDataFlag){
 				_delay_ms(500);
-				char buf1[20] = "32.0204";
-				char buf2[20] = "-118.2891";
+				char buf1[100] = "32.0204";
+				char buf2[100] = "-118.2891";
 				double lat2 = 34.0204;
 				double long2 = -121.2891;
 				
@@ -318,52 +318,55 @@ int main(void){
 				lcd_out(row1_col1, A);
 				lcd_out(0x09, "miles");
 				//lcd_out(row1_col1, radio.buffer); // TODO: get it to print correctly
+                lcd_out(0x67, "");
 			}
             _delay_ms(1000);
         }
         // if the state is 2, we can display sensor data
         else if(state == 2){
         	lcd_clear(); // clear old screen content
-        	lcd_clear();
+        	//lcd_clear();
             // initialize variables for the sensors
         	cli();
         	float pascals = getPressure();
-        	char buffer9[50];
+        	char buffer9[100];
         	pascals /= 3377.0;
         	FloatToStringNew(buffer9, pascals, 2);
         	//cli();
         	float alt = getAltitude();
-        	char buffer10[50];
+        	char buffer10[100];
         	FloatToStringNew(buffer10, alt, 2);
         
         	float tempC = getTemperature();
-        	char buffer11[20];
+        	char buffer11[100];
         	FloatToStringNew(buffer11, tempC, 2);
         
-       		_delay_ms(200);
-        	lcd_out(row1_col1, "Press.(In. Hg): ");
-        	lcd_out(0x10, buffer9);
+       		//_delay_ms(200);
+        	lcd_out(row1_col1, "Press.(mmHg): ");
+        	lcd_out(0x0E, buffer9);
         	
         	lcd_out(row2_col1, "Altitude(m): ");
         	lcd_out(0x4D, buffer10);
         	
         	lcd_out(row3_col1, "Temp(C): ");
         	lcd_out(0x1D, buffer11);
-        	sei();
-            _delay_ms(1000);
+            lcd_out(0x67, "");
+        	_delay_ms(1000);
+            sei();
         }
         else if(state == 3){
             lcd_clear(); // clear old content
-            lcd_clear();
+            //lcd_clear();
             cli();
-            printData(&gps);
+            char buffer[100];
+            printData(&gps, buffer);
             _delay_ms(1000);
             sei();
         }
         else if(state == 4){
         	lcd_clear(); // clear old content
-        	lcd_clear();
-        	_delay_ms(500);
+        	//lcd_clear();
+        	//_delay_ms(500);
             if(count < steps){
             	lcd_out(row1_col1, "MOVING");
             	//serial_outputString("\r\nMOVING\r\n");
@@ -377,12 +380,18 @@ int main(void){
 			char stepBuf[20] ; 
     		sprintf(stepBuf,"steps : %d",steps);
 			lcd_out(row2_col1, stepBuf);
+            lcd_out(0x67, "");
             _delay_ms(1000);
         }
+        else if(state == 5){
+            lcd_out(row1_col1, "Menu");
+            lcd_out(0x67, "");
+            _delay_ms(3000); // wait 1 sec
+            state = 0;
+        }
         else
-            // lcd_out(row1_col1, "menu");
-            _delay_ms(500); // wait 1 sec
-
+            lcd_out(0x67, "");
+            _delay_ms(100);
     }
     return 0;   /* never reached */
 }

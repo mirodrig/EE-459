@@ -124,13 +124,14 @@ float getTemperature(void)
   temp /= 16.0;
   return temp;
 }
-void write8(char slave, char reg, char data)
-{
-	i2c_start(slave);
-	i2c_write(reg);
-	i2c_write(data);
-	i2c_stop();
-}
+
+// void write8(char slave, char reg, char data)
+// {
+// 	i2c_start(slave);
+// 	i2c_write(reg);
+// 	i2c_write(data);
+// 	i2c_stop();
+// }
 
 uint8_t read8(uint8_t device_addr,uint8_t *a,uint16_t size_a ,uint8_t *p, uint16_t n)
 {

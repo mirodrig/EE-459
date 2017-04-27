@@ -21,7 +21,7 @@ void MPLinit();
 float getPressure(void);
 float getAltitude(void);
 float getTemperature(void);
-void write8(char, char, char);
+//void write8(char, char, char);
 uint8_t read8(uint8_t, uint8_t*, uint16_t, uint8_t*, uint16_t);
 void FloatToStringNew(char*, float, char);
 
