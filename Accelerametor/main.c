@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 int steps = 0; 
-int steps1 = 0;
 int count =2;
 
 
@@ -57,7 +56,7 @@ ISR(INT1_vect)
 	  steps++ ; 
 	 
 	char buf[20] ; 
-	sprintf(buf,"count : %d",steps);
+	sprintf(buf,"steps : %d",steps);
 	serial_outputString(buf);
 
 		_delay_ms(20);
