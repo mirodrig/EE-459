@@ -202,7 +202,7 @@ void interruptInit(){
 	DDRD &= ~(1 << DDD3);
 	PORTD |= (1<<PORTD2);
 	PORTD |= (1<<PORTD3); 
-    EICRA |= (1<<ISC00) | (1<<ISC01) | (1<<ISC10); // set it for rising edge 
+    EICRA |= (1<<ISC00) | (1<<ISC01) | (1<<ISC11); // set it for rising edge 
     EIMSK |= (1 << INT0) | (1 << INT1); 
     cli(); // just added
     sei();
@@ -255,9 +255,14 @@ int main(void){
     lcd_clear();
     _delay_ms(500);
     lcd_out(row1_col1, "Welcome");
+    lcd_out(row2_col1, "GoPro Scout");
+    lcd_out(row3_col1, "Team 5 Project");
     _delay_ms(3000);
     lcd_clear();
-
+	
+	char buffer[100];
+	char buffer_sensor[100];
+	
     while (1){
         _delay_ms(500); // sample every 2 sec
     	serial_out(serial_in());
@@ -320,28 +325,42 @@ int main(void){
         	//lcd_clear();
             // initialize variables for the sensors
         	cli();
+        	int c = 0;
+            for(c = 0; c < 100; c++)
+            	buffer_sensor[c] = NULL;
         	float pascals = getPressure();
-        	char buffer9[100];
+        	//char buffer_sensor[100];
         	pascals /= 3377.0;
-        	FloatToStringNew(buffer9, pascals, 2);
+        	FloatToStringNew_1(buffer_sensor, pascals, 2);
+        	lcd_out(row1_col1, "Press.(InHg): ");
+        	lcd_out(0x0E, buffer_sensor);
+            for(c = 0; c < 100; c++)
+            	buffer_sensor[c] = NULL;
+            	
         	//cli();
         	float alt = getAltitude();
-        	char buffer10[100];
-        	FloatToStringNew(buffer10, alt, 2);
+        	//char buffer10[100];
+        	FloatToStringNew_1(buffer_sensor, alt, 2);
+        	lcd_out(row2_col1, "Altitude(m): ");
+        	lcd_out(0x4D, buffer_sensor);
+        	for(c = 0; c < 100; c++)
+            	buffer_sensor[c] = NULL;
         
         	float tempC = getTemperature();
-        	char buffer11[100];
-        	FloatToStringNew(buffer11, tempC, 2);
+        	//char buffer11[100];
+        	FloatToStringNew_1(buffer_sensor, tempC, 2);
+        	lcd_out(row3_col1, "Temp(C): ");
+        	lcd_out(0x1D, buffer_sensor);
         
        		//_delay_ms(200);
-        	lcd_out(row1_col1, "Press.(mmHg): ");
-        	lcd_out(0x0E, buffer9);
-        	
-        	lcd_out(row2_col1, "Altitude(m): ");
-        	lcd_out(0x4D, buffer10);
-        	
-        	lcd_out(row3_col1, "Temp(C): ");
-        	lcd_out(0x1D, buffer11);
+        	// lcd_out(row1_col1, "Press.(InHg): ");
+//         	lcd_out(0x0E, buffer9);
+//         	
+//         	lcd_out(row2_col1, "Altitude(m): ");
+//         	lcd_out(0x4D, buffer10);
+//         	
+//         	lcd_out(row3_col1, "Temp(C): ");
+//         	lcd_out(0x1D, buffer11);
             lcd_out(0x67, "");
         	_delay_ms(1000);
             sei();
@@ -350,7 +369,10 @@ int main(void){
             lcd_clear(); // clear old content
             //lcd_clear();
             cli();
-            char buffer[100];
+            //char buffer[100];
+            int c = 0;
+            for(c = 0; c < 100; c++)
+            	buffer[c] = NULL;
             printData(&gps, buffer);
             _delay_ms(1000);
             sei();
@@ -362,19 +384,25 @@ int main(void){
             if(count < steps){
             	lcd_out(row1_col1, "MOVING");
                 count = steps;
-                _delay_ms(500);
+                //_delay_ms(500);
             }
             else{
             	lcd_out(row1_col1, "NOT MOVING");
 			}
-			char stepBuf[30] ; 
+			char stepBuf[100] ; 
     		sprintf(stepBuf,"steps : %d",steps);
 			lcd_out(row2_col1, stepBuf);
             lcd_out(0x67, "");
-            _delay_ms(1000);
+            int c = 0;
+            for(c = 0; c < 100; c++)
+            	stepBuf[c] = NULL;
+            _delay_ms(500);
         }
         else if(state == 5){
-            lcd_out(row1_col1, "Menu");
+            lcd_out(row1_col1, "Blue: Motion Sensor");
+            lcd_out(row2_col1, "Red: GPS");
+            lcd_out(row3_col1, "Black: Sensor Data");
+            lcd_out(row4_col1, "Green: Friend's GPS");
             lcd_out(0x67, "");
             _delay_ms(3000); // wait 1 sec
             state = 0;
@@ -399,5 +427,5 @@ ISR(INT1_vect){
     	lcd_out(row2_col1, buf);
     }
     //serial_outputString(buf);
-	_delay_ms(20);            
+	_delay_ms(50);            
 }

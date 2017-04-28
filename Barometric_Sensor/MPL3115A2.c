@@ -5,7 +5,7 @@
 #include "MPL3115A2.h"
 #include "../I2C/i2c.h"
 #include <util/delay.h>
-# include <stddef.h>
+#include <stddef.h>
 #include <avr/Interrupt.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,13 +20,15 @@
 void MPLinit()
 {
     i2c_init();
-    write8(0xC0,0X26,0xB8);
-    write8(0xC0,0X13,0X07);
+    write81(0xC0,0X26,0xB8);
+    write81(0xC0,0X13,0X07);
 }
 
 float getPressure(void)
 {
-  write8(SlaveAddressIIC, 0x26, 0x39);  
+write81(0xC0,0X26,0xB8);
+    write81(0xC0,0X13,0X07);
+  write81(SlaveAddressIIC, 0x26, 0x39);  
   unsigned char sta[1];
   unsigned char reg[1] = {0x00};
   while (!(sta[0]& 0x08)) {
@@ -60,7 +62,7 @@ float getPressure(void)
 float getAltitude(void)
 {
 	int32_t alt;
-  write8(SlaveAddressIIC,0x26,0xB9);
+  write81(SlaveAddressIIC,0x26,0xB9);
   unsigned char sta[1];
   unsigned char reg[1] = {0x00};
   while (! (sta[0] & 0x08)) {
@@ -92,7 +94,7 @@ float getAltitude(void)
 
   float altitude = (float)alt;
   altitude /= 16.0;
-  altitude -= 20.0;
+  altitude -= 34.0;
   
   return altitude;
 }
@@ -100,7 +102,7 @@ float getTemperature(void)
 {
 	int16_t t;
 
-  write8(SlaveAddressIIC,0x26,0xB9);
+  write81(SlaveAddressIIC,0x26,0xB9);
   unsigned char sta[1];
   unsigned char reg[1] = {0x00};
   while (! (sta[0] & 0x08)) {
@@ -125,13 +127,13 @@ float getTemperature(void)
   return temp;
 }
 
-// void write8(char slave, char reg, char data)
-// {
-// 	i2c_start(slave);
-// 	i2c_write(reg);
-// 	i2c_write(data);
-// 	i2c_stop();
-// }
+void write81(char slave, char reg, char data)
+{
+ 	i2c_start(slave);
+ 	i2c_write(reg);
+ 	i2c_write(data);
+ 	i2c_stop();
+}
 
 uint8_t read8(uint8_t device_addr,uint8_t *a,uint16_t size_a ,uint8_t *p, uint16_t n)
 {

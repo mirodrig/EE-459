@@ -38,6 +38,7 @@ void LSM_begin()
 }
 
 void readAccel(float* X, float* Y, float* Z) {
+cli();
   unsigned char buffer[6];
   unsigned char reg[6] = {0x28,0x29,0x2A,0x2B,0x2C,0x2D};
   uint8_t status;
@@ -59,6 +60,7 @@ void readAccel(float* X, float* Y, float* Z) {
   *X = xhi;
   *Y = yhi;
   *Z = zhi;
+  sei();
 }
 
 void write8(char address, char reg, char data)
