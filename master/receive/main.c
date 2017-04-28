@@ -259,17 +259,9 @@ int main(void){
     lcd_clear();
 
     while (1){
-	    // if no reception, record own GPS position
-		// else{
-	       	//cli(); // disable interrupts
-	       	// UCSR0B |= (1 << RXCIE0); // enable RX interrupt
         _delay_ms(500); // sample every 2 sec
     	serial_out(serial_in());
     	readSerial(&gps);
-        // 	//printData(&gps);
-        // 	UCSR0B &= ~(1 << RXCIE0); // disable RX interrupt
-        // 	sei(); // enable interrupts
-        // }
 
         // State Change poll all pins connected to buttons
         if((PIND & (1 << PD5)) == 0){
@@ -369,15 +361,13 @@ int main(void){
         	//_delay_ms(500);
             if(count < steps){
             	lcd_out(row1_col1, "MOVING");
-            	//serial_outputString("\r\nMOVING\r\n");
                 count = steps;
                 _delay_ms(500);
             }
             else{
             	lcd_out(row1_col1, "NOT MOVING");
-            	//serial_outputString("\r\nNOT MOVING\r\n");
 			}
-			char stepBuf[20] ; 
+			char stepBuf[30] ; 
     		sprintf(stepBuf,"steps : %d",steps);
 			lcd_out(row2_col1, stepBuf);
             lcd_out(0x67, "");
@@ -403,7 +393,7 @@ ISR(INT0_vect){
 
 ISR(INT1_vect){
 	steps++ ;  
-    char buf[20] ; 
+    char buf[30] ; 
     sprintf(buf,"steps : %d",steps);
     if(state == 4){
     	lcd_out(row2_col1, buf);
